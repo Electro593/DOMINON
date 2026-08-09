@@ -4,7 +4,7 @@ use std::io::BufReader;
 
 use serde::Deserialize;
 
-#[derive(Default, Deserialize, Copy, Clone)]
+#[derive(Default, Deserialize, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[repr(u8)]
 pub enum FaceType {
@@ -46,7 +46,7 @@ pub enum FaceType {
 impl FaceType {
     pub fn is_none(&self) -> bool {
         match self {
-            FaceType::None => true,
+            Self::None => true,
             _ => false,
         }
     }
@@ -54,9 +54,13 @@ impl FaceType {
     pub fn is_some(&self) -> bool {
         !self.is_none()
     }
+
+    pub fn max(self, face: FaceType) -> FaceType {
+        self.is_none().then_some(face).unwrap_or(self)
+    }
 }
 
-#[derive(Default, Deserialize, Copy, Clone)]
+#[derive(Default, Deserialize, Copy, Clone, PartialEq, Eq)]
 pub enum CellType {
     #[serde(rename = " ")]
     #[default]
@@ -84,6 +88,10 @@ impl CellType {
     pub fn is_some(&self) -> bool {
         !self.is_none()
     }
+
+    pub fn max(self, face: CellType) -> CellType {
+        self.is_none().then_some(face).unwrap_or(self)
+    }
 }
 
 #[derive(Deserialize, Copy, Clone)]
@@ -101,12 +109,28 @@ pub struct Polyomino {
     pub x: usize,
     #[serde(default)]
     pub y: usize,
-    #[serde(default)]
-    pub shield: usize,
     pub faces: Vec<Face>,
 }
 
-impl Polyomino {}
+impl Polyomino {
+    pub fn bounds(&self) -> (isize, isize, isize, isize) {
+        let xs = self.faces.iter().map(|r| r.dx);
+        let ys = self.faces.iter().map(|r| r.dy);
+        let x0 = xs.clone().min().unwrap_or_default();
+        let y0 = ys.clone().min().unwrap_or_default();
+        let x1 = xs.max().unwrap_or_default();
+        let y1 = ys.max().unwrap_or_default();
+        (x0, y0, x1, y1)
+    }
+
+    pub fn face_at(&self, dx: isize, dy: isize) -> FaceType {
+        self.faces
+            .iter()
+            .find(|f| f.dx == dx && f.dy == dy)
+            .map(|f| f.symbol)
+            .unwrap_or(FaceType::None)
+    }
+}
 
 #[derive(Deserialize, Clone)]
 pub struct Level {
@@ -117,10 +141,9 @@ pub struct Level {
 
 impl Level {
     pub fn bounds(&self) -> (usize, usize) {
-        (
-            self.cells.iter().map(|r| r.len()).max().unwrap_or_default(),
-            self.cells.len(),
-        )
+        let w = self.cells.iter().map(|r| r.len()).max().unwrap_or_default();
+        let h = self.cells.len();
+        (w, h)
     }
 
     pub fn cell_at(&self, x: usize, y: usize) -> CellType {
@@ -132,15 +155,15 @@ impl Level {
             .unwrap_or(&CellType::None)
     }
 
-    pub fn face_at(&self, x: usize, y: usize) -> FaceType {
-        self.polyominoes
-            .iter()
-            .flat_map(|p| p.faces.iter().map(|f| (f, p.x, p.y)))
-            .find(|(f, px, py)| {
-                px.wrapping_add_signed(f.dx) == x && py.wrapping_add_signed(f.dy) == y
-            })
-            .map(|(f, _, _)| f.symbol)
-            .unwrap_or_default()
+    pub fn face_at(&self, x: usize, y: usize) -> Option<(Face, Polyomino)> {
+        for p in self.polyominoes.iter() {
+            for f in p.faces.iter() {
+                if p.x.wrapping_add_signed(f.dx) == x && p.y.wrapping_add_signed(f.dy) == y {
+                    return Some((*f, p.clone()));
+                }
+            }
+        }
+        None
     }
 }
 

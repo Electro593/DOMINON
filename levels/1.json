@@ -10,7 +10,19 @@
       ]
     }
   ],
-  "hand": [{ "faces": [{ "symbol": "0" }] }],
+  "hand": [
+    { "faces": [{ "symbol": "0" }] },
+    { "faces": [{ "symbol": "1" }, { "symbol": "2", "dy": 1 }] },
+    {
+      "faces": [
+        { "symbol": "*" },
+        { "symbol": "0", "dy": -1 },
+        { "symbol": "3", "dx": 1 },
+        { "symbol": "6", "dy": 1 },
+        { "symbol": "9", "dx": -1 }
+      ]
+    }
+  ],
   "cells": [
     [" ", "*", " ", " "],
     ["*", "*", "<", "*"],
