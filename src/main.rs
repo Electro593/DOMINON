@@ -2,7 +2,7 @@ mod engine;
 mod level;
 mod ringbuffer;
 
-use std::{error::Error, fmt, io, iter, process::ExitCode};
+use std::{error::Error, fmt, io, iter, mem::discriminant, process::ExitCode};
 
 use crossterm;
 
@@ -162,13 +162,14 @@ impl fmt::Display for TextCellVLine {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum TextCell {
     Corner(TextCellCorner),
     HLine(TextCellHLine),
     VLine(TextCellVLine),
     Face(FaceType),
     Cell(CellType),
+    Pivot,
 }
 
 impl TextCell {
@@ -179,35 +180,23 @@ impl TextCell {
             Self::VLine(_) => vec![(0, 1), (0, 2), (2, 1), (2, 2)],
             Self::Face(_) => vec![(1, 1)],
             Self::Cell(_) => vec![(1, 2)],
+            Self::Pivot => vec![(1, 2)],
         }
     }
 
     fn promote(self, cell: TextCell) -> Option<TextCell> {
-        if let Self::Corner(c1) = self
-            && let Self::Corner(c2) = cell
-        {
-            return Some(Self::Corner(c1.max(c2)));
+        if self == cell {
+            return Some(self);
         }
-        if let Self::HLine(c1) = self
-            && let Self::HLine(c2) = cell
-        {
-            return Some(Self::HLine(c1.max(c2)));
+
+        if self < cell {
+            return cell.promote(self);
         }
-        if let Self::VLine(c1) = self
-            && let Self::VLine(c2) = cell
-        {
-            return Some(Self::VLine(c1.max(c2)));
+
+        if discriminant(&self) == discriminant(&cell) {
+            return Some(self);
         }
-        if let Self::Face(c1) = self
-            && let Self::Face(c2) = cell
-        {
-            return Some(Self::Face(c1.max(c2)));
-        }
-        if let Self::Cell(c1) = self
-            && let Self::Cell(c2) = cell
-        {
-            return Some(Self::Cell(c1.max(c2)));
-        }
+
         None
     }
 }
@@ -223,6 +212,7 @@ impl fmt::Display for TextCell {
                 Self::VLine(vline) => vline.to_string(),
                 Self::Face(face) => face_type_to_string(*face).to_string(),
                 Self::Cell(cell) => cell_type_to_string(*cell).to_string(),
+                Self::Pivot => "|==|".into(),
             }
         )
     }
@@ -282,6 +272,12 @@ impl TextGrid {
         self.get(gx, gy)
             .and_then(|c| c.promote(cell))
             .map(|c| self.set(gx, gy, c));
+    }
+
+    fn set_all(&mut self, x: usize, y: usize, cell: TextCell) {
+        cell.grid_offsets()
+            .iter()
+            .for_each(|(dx, dy)| self.set(x * 2 + dx, y * 3 + dy, cell));
     }
 
     fn promote_all(&mut self, x: usize, y: usize, cell: TextCell) {
@@ -400,6 +396,10 @@ fn display_hand(level: &Level) {
         for f in p.faces.iter() {
             let x = px + f.dx.abs_diff(x0);
             let y = f.dy.abs_diff(y_min);
+
+            if f.dx == 0 && f.dy == 0 {
+                grid.set_all(x, y, TextCell::Pivot);
+            }
 
             grid.promote_all(x, y, TextCell::Corner(TextCellCorner::Present));
             grid.promote_all(x, y, TextCell::Face(f.symbol));

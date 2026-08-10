@@ -4,7 +4,7 @@ use std::io::BufReader;
 
 use serde::Deserialize;
 
-#[derive(Default, Deserialize, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 #[repr(u8)]
 pub enum FaceType {
@@ -54,13 +54,9 @@ impl FaceType {
     pub fn is_some(&self) -> bool {
         !self.is_none()
     }
-
-    pub fn max(self, face: FaceType) -> FaceType {
-        self.is_none().then_some(face).unwrap_or(self)
-    }
 }
 
-#[derive(Default, Deserialize, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CellType {
     #[serde(rename = " ")]
     #[default]
@@ -87,10 +83,6 @@ impl CellType {
 
     pub fn is_some(&self) -> bool {
         !self.is_none()
-    }
-
-    pub fn max(self, face: CellType) -> CellType {
-        self.is_none().then_some(face).unwrap_or(self)
     }
 }
 
