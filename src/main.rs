@@ -18,6 +18,25 @@ impl AlphabetCounter {
         AlphabetCounter { count: 1 }
     }
 
+    fn from(count: usize) -> Option<String> {
+        if count == 0 {
+            return None;
+        }
+
+        let mut value: Vec<char> = vec!['\0'; 14];
+        let mut c = count;
+        let mut i = 14;
+
+        while c > 0 {
+            i -= 1;
+            let n = c - 1;
+            value[i] = (b'A' + (n % 26) as u8) as char;
+            c = n / 26;
+        }
+
+        Some(String::from_iter(&value[i..14]))
+    }
+
     fn parse(str: &String) -> Result<usize, &'static str> {
         let mut count: usize = 0;
 
@@ -38,24 +57,9 @@ impl Iterator for AlphabetCounter {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.count == 0 {
-            return None;
-        }
-
-        let mut value: Vec<char> = vec!['\0'; 14];
-        let mut i = 14;
-
-        let mut count = self.count;
+        let result = Self::from(self.count);
         self.count += 1;
-
-        while count > 0 {
-            i -= 1;
-            let n = count - 1;
-            value[i] = (b'A' + (n % 26) as u8) as char;
-            count = n / 26;
-        }
-
-        Some(String::from_iter(&value[i..14]))
+        result
     }
 }
 
@@ -416,9 +420,10 @@ fn display_hand(level: &Level) {
 }
 
 const HELP_STRING: &str = "Available commands:
-    q     Exit the game.
     h     Print this help text.
+    q     Exit the game.
     lL    Load a new level L. This will delete your current progress!
+    b     Print the current state of the game.
     x     Reset the level to its initial state. This can be undone.
     y     Redo the last undo.
     z     Undo the last action.
@@ -426,13 +431,93 @@ const HELP_STRING: &str = "Available commands:
     ccwN  Rotate polyomino N by 90 degrees counter-clockwise.
     pNXY  Move polyomino N to board cell XY (X is alphabetical, Y is numerical).";
 
-fn play(engine: &mut Engine) -> Option<String> {
-    loop {
-        println!("\nBOARD");
-        display_board(&engine.level);
+enum GameAction {
+    Help,
+    Quit,
+    SwitchLevel(String),
+    ShowBoard,
+    Reset,
+    Redo,
+    Undo,
+    Rotate { i: usize, cw: bool },
+    Place { i: usize, x: usize, y: usize },
+}
 
+impl GameAction {
+    fn parse(input: String) -> Result<GameAction, String> {
+        let lower = input.to_ascii_lowercase();
+        let ref mut chars = lower.chars().peekable();
+
+        let action = match chars.next() {
+            None | Some('h') => Ok(Self::Help),
+            Some('q') => Ok(Self::Quit),
+            Some('l') => Ok(Self::SwitchLevel(chars.collect())),
+            Some('b') => Ok(Self::ShowBoard),
+            Some('x') => Ok(Self::Reset),
+            Some('y') => Ok(Self::Redo),
+            Some('z') => Ok(Self::Undo),
+            Some('c') => {
+                let cwr = Ok(chars.next_if(|c| *c == 'c').is_none()).and_then(|cw| {
+                    chars
+                        .next_if(|c| *c == 'w')
+                        .is_some()
+                        .then_some(cw)
+                        .ok_or(None)
+                });
+
+                let ir = chars
+                    .collect::<String>()
+                    .parse::<usize>()
+                    .map(|i| i - 1)
+                    .map_err(|e| Some(format!("Invalid format for N: {e}.")));
+
+                ir.and_then(|i| cwr.map(|cw| Self::Rotate { i, cw }))
+            }
+            Some('p') => {
+                let nc = chars.clone().take_while(|c| c.is_ascii_digit());
+                let xc = chars
+                    .clone()
+                    .skip(nc.clone().count())
+                    .take_while(|c| c.is_ascii_alphabetic());
+                let yc = chars.skip(nc.clone().count() + xc.clone().count());
+
+                let ir = nc
+                    .collect::<String>()
+                    .parse::<usize>()
+                    .map(|n| n - 1)
+                    .map_err(|e| Some(format!("Invalid format for N: {e}.")));
+
+                let xr = AlphabetCounter::parse(&xc.collect::<String>())
+                    .map(|n| n - 1)
+                    .map_err(|e| Some(format!("Invalid format for X: {e}.")));
+
+                let yr = yc
+                    .collect::<String>()
+                    .parse::<usize>()
+                    .map(|n| n - 1)
+                    .map_err(|e| Some(format!("Invalid format for Y: {e}.")));
+
+                ir.and_then(|i| xr.and_then(|x| yr.map(|y| Self::Place { i, x, y })))
+            }
+            _ => Err(None),
+        };
+
+        action
+            .and_then(|a| chars.next().is_none().then_some(a).ok_or(None))
+            .map_err(|e| e.unwrap_or("Command not recognized.".into()))
+    }
+}
+
+fn play(engine: &mut Engine) -> Option<String> {
+    fn show_board(level: &Level) {
+        println!("\nBOARD");
+        display_board(level);
         println!("\nHAND");
-        display_hand(&engine.level);
+        display_hand(level);
+    }
+
+    loop {
+        show_board(&engine.level);
 
         loop {
             println!("\nWhat would you like to do?");
@@ -443,133 +528,67 @@ fn play(engine: &mut Engine) -> Option<String> {
                 continue;
             }
 
-            let action = input.trim().to_ascii_lowercase();
-            let mut chars = action.chars().peekable();
-            match chars.next() {
-                None => {
-                    println!("{HELP_STRING}");
-                    continue;
-                }
-                Some('q') => {
-                    if chars.next().is_some() {
-                        println!("Command not recognized.");
-                        continue;
-                    }
+            let action = GameAction::parse(input.trim().into());
 
-                    return None;
-                }
-                Some('h') => {
-                    if chars.next().is_some() {
-                        println!("Command not recognized.");
-                        continue;
-                    }
+            if let Err(e) = action {
+                println!("{e}");
+                continue;
+            }
 
-                    println!("{HELP_STRING}")
-                }
-                Some('l') => return Some(chars.collect::<String>()),
-                Some('x') => {
-                    if chars.next().is_some() {
-                        println!("Command not recognized.");
-                        continue;
-                    }
-
+            match action.unwrap() {
+                GameAction::Help => println!("{HELP_STRING}"),
+                GameAction::Quit => return None,
+                GameAction::SwitchLevel(l) => return Some(l),
+                GameAction::ShowBoard => break,
+                GameAction::Reset => {
                     if let Err(e) = engine.reset() {
                         println!("Cannot reset: {e}.");
-                        continue;
+                    } else {
+                        println!("Reset the board.");
+                        break;
                     }
-
-                    println!("Reset the board.");
-                    break;
                 }
-                Some('y') => {
-                    if chars.next().is_some() {
-                        println!("Command not recognized.");
-                        continue;
-                    }
-
+                GameAction::Redo => {
                     if let Err(e) = engine.redo() {
                         println!("Cannot redo: {e}.");
-                        continue;
+                    } else {
+                        println!("Redid one action.");
+                        break;
                     }
-
-                    println!("Redid one action.");
-                    break;
                 }
-                Some('z') => {
-                    if chars.next().is_some() {
-                        println!("Command not recognized.");
-                        continue;
-                    }
-
+                GameAction::Undo => {
                     if let Err(e) = engine.undo() {
                         println!("Cannot undo: {e}.");
-                        continue;
+                    } else {
+                        println!("Undid one action.");
+                        break;
                     }
-
-                    println!("Undid one action.");
-                    break;
                 }
-                Some('c') => {
-                    let cw = chars.next_if(|c| *c == 'c').is_none();
-                    if chars.next_if(|c| *c == 'w').is_none() {
-                        println!("Command not recognized.");
-                        continue;
-                    }
-
-                    let ns = chars.collect::<String>();
-                    let n = ns.parse::<usize>();
-
-                    if let Err(e) = n {
-                        println!("Invalid format for N: {e}.");
-                        continue;
-                    }
-
-                    if let Err(e) = engine.rotate(n.unwrap() - 1, cw) {
+                GameAction::Rotate { i, cw } => {
+                    if let Err(e) = engine.rotate(i, cw) {
                         println!("Cannot rotate piece: {e}.");
-                        continue;
+                    } else {
+                        println!(
+                            "Rotated piece {} {}.",
+                            i + 1,
+                            if cw { "clockwise" } else { "counter clockwise" }
+                        );
+                        break;
                     }
-
-                    println!("Rotated piece {ns}.");
-                    break;
                 }
-                Some('p') => {
-                    let nc = chars.clone().take_while(|c| c.is_ascii_digit());
-                    let xc = chars
-                        .clone()
-                        .skip(nc.clone().count())
-                        .take_while(|c| c.is_ascii_alphabetic());
-                    let yc = chars.skip(nc.clone().count() + xc.clone().count());
-
-                    let ns = nc.collect::<String>();
-                    let xs = xc.collect::<String>();
-                    let ys = yc.collect::<String>();
-
-                    let n = ns.parse::<usize>();
-                    let x = AlphabetCounter::parse(&xs);
-                    let y = ys.parse::<usize>();
-
-                    if let Err(e) = n {
-                        println!("Invalid format for N: {e}.");
-                        continue;
-                    }
-                    if let Err(e) = x {
-                        println!("Invalid format for X: {e}.");
-                        continue;
-                    }
-                    if let Err(e) = y {
-                        println!("Invalid format for Y: {e}.");
-                        continue;
-                    }
-
-                    if let Err(e) = engine.place(n.unwrap() - 1, x.unwrap() - 1, y.unwrap() - 1) {
+                GameAction::Place { i, x, y } => {
+                    if let Err(e) = engine.place(i, x, y) {
                         println!("Cannot place piece: {e}.");
-                        continue;
+                    } else {
+                        println!(
+                            "Placed piece {} at {}{}.",
+                            i + 1,
+                            AlphabetCounter::from(x + 1).unwrap(),
+                            y + 1
+                        );
+                        break;
                     }
-
-                    println!("Placed piece {ns} at {xs}{ys}.");
-                    break;
                 }
-                _ => println!("Command not recognized."),
             };
         }
     }
