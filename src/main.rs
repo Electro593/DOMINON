@@ -1,13 +1,13 @@
-use std::fmt;
-use std::io;
-use std::iter;
-use std::process::ExitCode;
-
 mod engine;
 mod level;
+mod ringbuffer;
 
-use crate::engine::Engine;
-use crate::level::{CellType, FaceType, Level, Polyomino};
+use std::{fmt, io, iter, process::ExitCode};
+
+use crate::{
+    engine::Engine,
+    level::{CellType, FaceType, Level, Polyomino},
+};
 
 struct AlphabetCounter {
     count: usize,
@@ -517,7 +517,7 @@ fn play(engine: &mut Engine) -> Option<String> {
     }
 
     loop {
-        show_board(&engine.level);
+        show_board(engine.current());
 
         loop {
             println!("\nWhat would you like to do?");

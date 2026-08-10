@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use crate::level::{Level, Polyomino};
+use crate::{level::Level, ringbuffer::RingBuffer};
 
 #[derive(Debug)]
 pub enum EngineError {
@@ -26,34 +26,53 @@ impl fmt::Display for EngineError {
 }
 
 pub struct Engine {
-    pub original_level: Level,
-    pub level: Level,
+    original: Level,
+    history: RingBuffer<Level, 128>,
+    cursor: usize,
 }
 
 impl Engine {
     pub fn new(level: Level) -> Self {
-        Engine {
-            original_level: level.clone(),
-            level,
+        Self {
+            original: level,
+            history: const { RingBuffer::new() },
+            cursor: 0,
         }
     }
 
+    pub fn current(&self) -> &Level {
+        self.get(self.cursor).unwrap()
+    }
+
     pub fn undo(&mut self) -> Result<(), EngineError> {
-        Ok(())
+        if self.cursor == 0 {
+            Err(EngineError::CannotUndo)
+        } else {
+            self.cursor -= 1;
+            Ok(())
+        }
     }
 
     pub fn redo(&mut self) -> Result<(), EngineError> {
-        Ok(())
+        if self.cursor >= self.history.len() {
+            Err(EngineError::CannotRedo)
+        } else {
+            self.cursor += 1;
+            Ok(())
+        }
     }
 
     pub fn reset(&mut self) -> Result<(), EngineError> {
-        self.level = self.original_level.clone();
+        if self.cursor > 0 {
+            self.push_mut(self.original.clone());
+        }
         Ok(())
     }
 
     pub fn rotate(&mut self, hand_index: usize, clockwise: bool) -> Result<(), EngineError> {
-        let polyomino = self
-            .level
+        let mut level = self.current().clone();
+
+        let polyomino = level
             .hand
             .get_mut(hand_index)
             .ok_or(EngineError::PolyominoNotFound)?;
@@ -65,51 +84,50 @@ impl Engine {
                 (face.dy, -face.dx)
             };
         }
+
+        self.push_mut(level);
         Ok(())
     }
 
     pub fn place(&mut self, hand_index: usize, x: usize, y: usize) -> Result<(), EngineError> {
-        if hand_index >= self.level.hand.len() {
+        let mut level = self.current().clone();
+
+        if hand_index >= level.hand.len() {
             return Err(EngineError::PolyominoNotFound);
         }
 
-        let mut p = self.level.hand.remove(hand_index);
-        p.x = x;
-        p.y = y;
+        let mut polyomino = level.hand.remove(hand_index);
+        polyomino.x = x;
+        polyomino.y = y;
 
-        for f in p.faces.iter() {
-            let x = p.x.wrapping_add_signed(f.dx);
-            let y = p.y.wrapping_add_signed(f.dy);
+        for face in polyomino.faces.iter() {
+            let fx = x.wrapping_add_signed(face.dx);
+            let fy = y.wrapping_add_signed(face.dy);
 
-            if x >= 256 || y >= 256 {
+            if fx >= 256 || fy >= 256 {
                 return Err(EngineError::PlacementOutOfBounds);
             }
 
-            if self.level.face_at(x, y).is_some() {
+            if level.face_at(fx, fy).is_some() {
                 return Err(EngineError::PlacementCollision);
             }
         }
 
-        self.level.polyominoes.push(p);
+        level.polyominoes.push(polyomino);
+
+        self.push_mut(level);
         Ok(())
     }
 
-    fn get_polyomino(&mut self, polyomino_index: usize) -> Result<&mut Polyomino, EngineError> {
-        self.level
-            .polyominoes
-            .get_mut(polyomino_index)
-            .ok_or(EngineError::PolyominoNotFound)
+    fn get(&self, index: usize) -> Option<&Level> {
+        (index == 0)
+            .then_some(&self.original)
+            .or_else(|| self.history[index - 1].as_ref())
     }
 
-    fn damage_polyomino(&mut self, polyomino_index: usize) -> Result<(), EngineError> {
-        let polyomino = self.get_polyomino(polyomino_index)?;
-
-        if polyomino.shield > 1 {
-            polyomino.shield -= 1;
-        } else {
-            self.level.polyominoes.remove(polyomino_index);
-        }
-
-        Ok(())
+    fn push_mut(&mut self, level: Level) -> &mut Level {
+        self.history.truncate(self.cursor);
+        self.cursor = self.history.len().min(self.cursor + 1);
+        self.history.push_mut(level)
     }
 }
