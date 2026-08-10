@@ -1,6 +1,8 @@
-use std::error::Error;
 use std::fmt;
+use std::io;
+use std::process::ExitCode;
 
+mod engine;
 mod level;
 
 use crate::level::{CellType, FaceType, Level, Polyomino};
@@ -316,16 +318,37 @@ fn display_hand(level: &Level) {
     println!("{grid}");
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    println!("Welcome to DOMINON!");
-
-    let board = level::load("1")?;
-
+fn play(level: Level) {
     println!("\nBOARD");
-    display_board(&board);
+    display_board(&level);
 
     println!("\nHAND");
-    display_hand(&board);
+    display_hand(&level);
+}
 
-    Ok(())
+fn main() -> ExitCode {
+    println!("Welcome to DOMINON!");
+
+    loop {
+        println!("\nWhich level would you like to play?");
+
+        let mut input = String::new();
+        if let Err(e) = io::stdin().read_line(&mut input) {
+            println!("Failed to read from stdio. {e}");
+            continue;
+        }
+
+        let level_name = input.trim();
+        let level = level::load(level_name);
+        if let Err(e) = level {
+            println!("Failed to load level: {e}");
+            continue;
+        }
+
+        println!("\nLEVEL {level_name}");
+        play(level.unwrap());
+        break;
+    }
+
+    ExitCode::SUCCESS
 }

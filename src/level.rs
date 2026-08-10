@@ -109,6 +109,8 @@ pub struct Polyomino {
     pub x: usize,
     #[serde(default)]
     pub y: usize,
+    #[serde(default)]
+    pub shield: usize,
     pub faces: Vec<Face>,
 }
 
