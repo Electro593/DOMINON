@@ -2,7 +2,9 @@ mod engine;
 mod level;
 mod ringbuffer;
 
-use std::{fmt, io, iter, process::ExitCode};
+use std::{error::Error, fmt, io, iter, process::ExitCode};
+
+use crossterm;
 
 use crate::{
     engine::Engine,
@@ -431,7 +433,9 @@ const HELP_STRING: &str = "Available commands:
     ccwN  Rotate polyomino N by 90 degrees counter-clockwise.
     pNXY  Move polyomino N to board cell XY (X is alphabetical, Y is numerical).";
 
+#[derive(Clone)]
 enum GameAction {
+    RepeatLast,
     Help,
     Quit,
     SwitchLevel(String),
@@ -449,7 +453,8 @@ impl GameAction {
         let ref mut chars = lower.chars().peekable();
 
         let action = match chars.next() {
-            None | Some('h') => Ok(Self::Help),
+            None => Ok(Self::RepeatLast),
+            Some('h') => Ok(Self::Help),
             Some('q') => Ok(Self::Quit),
             Some('l') => Ok(Self::SwitchLevel(chars.collect())),
             Some('b') => Ok(Self::ShowBoard),
@@ -508,16 +513,29 @@ impl GameAction {
     }
 }
 
-fn play(engine: &mut Engine) -> Option<String> {
-    fn show_board(level: &Level) {
-        println!("\nBOARD");
-        display_board(level);
-        println!("\nHAND");
-        display_hand(level);
-    }
+fn clear_terminal() -> Result<(), Box<dyn Error>> {
+    crossterm::execute!(
+        io::stdout(),
+        crossterm::cursor::MoveTo(0, 0),
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::Purge)
+    )?;
+    Ok(())
+}
+
+fn play(engine: &mut Engine, level_name: &String) -> Option<String> {
+    let mut last_action = None;
 
     loop {
-        show_board(engine.current());
+        let _ = clear_terminal();
+
+        println!("LEVEL {level_name}");
+
+        let level = engine.current();
+        println!("\nBOARD\n");
+        display_board(level);
+        println!("\nHAND\n");
+        display_hand(level);
 
         loop {
             println!("\nWhat would you like to do?");
@@ -535,7 +553,16 @@ fn play(engine: &mut Engine) -> Option<String> {
                 continue;
             }
 
-            match action.unwrap() {
+            let resolved_action = match action.unwrap() {
+                GameAction::RepeatLast => last_action.clone().unwrap_or(GameAction::Help),
+                a => {
+                    last_action = Some(a.clone());
+                    a
+                }
+            };
+
+            match resolved_action {
+                GameAction::RepeatLast => continue,
                 GameAction::Help => println!("{HELP_STRING}"),
                 GameAction::Quit => return None,
                 GameAction::SwitchLevel(l) => return Some(l),
@@ -618,10 +645,9 @@ fn main() -> ExitCode {
                 continue;
             }
 
-            println!("\nLEVEL {ln}");
             let mut engine = Engine::new(level.unwrap());
 
-            if let Some(n) = play(&mut engine) {
+            if let Some(n) = play(&mut engine, ln) {
                 level_name = Some(n);
                 continue;
             } else {

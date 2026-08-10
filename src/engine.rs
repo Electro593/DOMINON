@@ -127,7 +127,9 @@ impl Engine {
 
     fn push_mut(&mut self, level: Level) -> &mut Level {
         self.history.truncate(self.cursor);
-        self.cursor = self.history.len().min(self.cursor + 1);
+        if self.cursor < self.history.capacity() {
+            self.cursor += 1;
+        }
         self.history.push_mut(level)
     }
 }

@@ -23,6 +23,10 @@ impl<T, const N: usize> RingBuffer<T, N> {
         self.len
     }
 
+    pub const fn capacity(&self) -> usize {
+        N
+    }
+
     pub fn truncate(&mut self, len: usize) {
         if self.len > len {
             self.len = len
@@ -33,12 +37,12 @@ impl<T, const N: usize> RingBuffer<T, N> {
         if self.len < N {
             let index = self.index_of(self.len);
             self.len += 1;
-            self.data[self.head] = Some(value);
+            self.data[index] = Some(value);
             self.data[index].as_mut().unwrap()
         } else {
             let index = self.head;
             self.head += 1;
-            self.data[self.head] = Some(value);
+            self.data[index] = Some(value);
             self.data[index].as_mut().unwrap()
         }
     }
