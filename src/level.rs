@@ -122,7 +122,11 @@ impl Polyomino {
         let y0 = ys.clone().min().unwrap_or_default();
         let x1 = xs.max().unwrap_or_default();
         let y1 = ys.max().unwrap_or_default();
-        (x0, y0, x1, y1)
+
+        let ns = vec![x0, y0, x1, y1, -x0, -x1, -y0, -y1];
+        let min = *ns.iter().min().unwrap();
+        let max = *ns.iter().max().unwrap();
+        (min, min, max, max)
     }
 
     pub fn face_at(&self, dx: isize, dy: isize) -> FaceType {
@@ -169,7 +173,7 @@ impl Level {
     }
 }
 
-pub fn load(name: &str) -> Result<Level, Box<dyn Error>> {
+pub fn load(name: &String) -> Result<Level, Box<dyn Error>> {
     let file_name = format!("levels/{name}.json");
     let file = File::open(file_name)?;
     let reader = BufReader::new(file);

@@ -6,6 +6,7 @@ use std::process::ExitCode;
 mod engine;
 mod level;
 
+use crate::engine::Engine;
 use crate::level::{CellType, FaceType, Level, Polyomino};
 
 struct AlphabetCounter {
@@ -15,6 +16,21 @@ struct AlphabetCounter {
 impl AlphabetCounter {
     fn new() -> Self {
         AlphabetCounter { count: 1 }
+    }
+
+    fn parse(str: &String) -> Result<usize, &'static str> {
+        let mut count: usize = 0;
+
+        for c in str.to_ascii_uppercase().chars() {
+            if !c.is_ascii_alphabetic() {
+                return Err("Expected a series of letters");
+            }
+
+            count = count * 26 + 1;
+            count += c.to_ascii_uppercase() as usize - 'A' as usize;
+        }
+
+        Ok(count)
     }
 }
 
@@ -311,8 +327,8 @@ impl fmt::Display for TextGrid {
 fn display_board(level: &Level) {
     let (w, h) = level.bounds();
     let mut grid = TextGrid::new(
-        (1..=w).map(|n| n.to_string()).collect(),
-        AlphabetCounter::new().take(h).collect(),
+        AlphabetCounter::new().take(w).collect(),
+        (1..=h).map(|n| n.to_string()).collect(),
     );
 
     for y in 0..h {
@@ -357,7 +373,6 @@ fn display_hand(level: &Level) {
 
     let xs = x0s.clone().zip(x1s);
     let ws = xs.clone().map(|(x0, x1)| x1.abs_diff(x0) + 1);
-    let w = ws.clone().sum::<usize>() + level.hand.len() - 1;
     let h = y_max.abs_diff(y_min) + 1;
 
     let mut grid = TextGrid::new(
@@ -400,38 +415,199 @@ fn display_hand(level: &Level) {
     println!("{grid}");
 }
 
-fn play(level: Level) {
-    println!("\nBOARD");
-    display_board(&level);
+const HELP_STRING: &str = "Available commands:
+    q     Exit the game.
+    h     Print this help text.
+    lL    Load a new level L. This will delete your current progress!
+    x     Reset the level to its initial state. This can be undone.
+    y     Redo the last undo.
+    z     Undo the last action.
+    cwN   Rotate polyomino N by 90 degrees clockwise.
+    ccwN  Rotate polyomino N by 90 degrees counter-clockwise.
+    pNXY  Move polyomino N to board cell XY (X is alphabetical, Y is numerical).";
 
-    println!("\nHAND");
-    display_hand(&level);
+fn play(engine: &mut Engine) -> Option<String> {
+    loop {
+        println!("\nBOARD");
+        display_board(&engine.level);
+
+        println!("\nHAND");
+        display_hand(&engine.level);
+
+        loop {
+            println!("\nWhat would you like to do?");
+            let mut input = String::new();
+            input.clear();
+            if let Err(e) = io::stdin().read_line(&mut input) {
+                println!("Failed to read from stdio. {e}");
+                continue;
+            }
+
+            let action = input.trim().to_ascii_lowercase();
+            let mut chars = action.chars().peekable();
+            match chars.next() {
+                None => {
+                    println!("{HELP_STRING}");
+                    continue;
+                }
+                Some('q') => {
+                    if chars.next().is_some() {
+                        println!("Command not recognized.");
+                        continue;
+                    }
+
+                    return None;
+                }
+                Some('h') => {
+                    if chars.next().is_some() {
+                        println!("Command not recognized.");
+                        continue;
+                    }
+
+                    println!("{HELP_STRING}")
+                }
+                Some('l') => return Some(chars.collect::<String>()),
+                Some('x') => {
+                    if chars.next().is_some() {
+                        println!("Command not recognized.");
+                        continue;
+                    }
+
+                    if let Err(e) = engine.reset() {
+                        println!("Cannot reset: {e}.");
+                        continue;
+                    }
+
+                    println!("Reset the board.");
+                    break;
+                }
+                Some('y') => {
+                    if chars.next().is_some() {
+                        println!("Command not recognized.");
+                        continue;
+                    }
+
+                    if let Err(e) = engine.redo() {
+                        println!("Cannot redo: {e}.");
+                        continue;
+                    }
+
+                    println!("Redid one action.");
+                    break;
+                }
+                Some('z') => {
+                    if chars.next().is_some() {
+                        println!("Command not recognized.");
+                        continue;
+                    }
+
+                    if let Err(e) = engine.undo() {
+                        println!("Cannot undo: {e}.");
+                        continue;
+                    }
+
+                    println!("Undid one action.");
+                    break;
+                }
+                Some('c') => {
+                    let cw = chars.next_if(|c| *c == 'c').is_none();
+                    if chars.next_if(|c| *c == 'w').is_none() {
+                        println!("Command not recognized.");
+                        continue;
+                    }
+
+                    let ns = chars.collect::<String>();
+                    let n = ns.parse::<usize>();
+
+                    if let Err(e) = n {
+                        println!("Invalid format for N: {e}.");
+                        continue;
+                    }
+
+                    if let Err(e) = engine.rotate(n.unwrap() - 1, cw) {
+                        println!("Cannot rotate piece: {e}.");
+                        continue;
+                    }
+
+                    println!("Rotated piece {ns}.");
+                    break;
+                }
+                Some('p') => {
+                    let nc = chars.clone().take_while(|c| c.is_ascii_digit());
+                    let xc = chars
+                        .clone()
+                        .skip(nc.clone().count())
+                        .take_while(|c| c.is_ascii_alphabetic());
+                    let yc = chars.skip(nc.clone().count() + xc.clone().count());
+
+                    let ns = nc.collect::<String>();
+                    let xs = xc.collect::<String>();
+                    let ys = yc.collect::<String>();
+
+                    let n = ns.parse::<usize>();
+                    let x = AlphabetCounter::parse(&xs);
+                    let y = ys.parse::<usize>();
+
+                    if let Err(e) = n {
+                        println!("Invalid format for N: {e}.");
+                        continue;
+                    }
+                    if let Err(e) = x {
+                        println!("Invalid format for X: {e}.");
+                        continue;
+                    }
+                    if let Err(e) = y {
+                        println!("Invalid format for Y: {e}.");
+                        continue;
+                    }
+
+                    if let Err(e) = engine.place(n.unwrap() - 1, x.unwrap() - 1, y.unwrap() - 1) {
+                        println!("Cannot place piece: {e}.");
+                        continue;
+                    }
+
+                    println!("Placed piece {ns} at {xs}{ys}.");
+                    break;
+                }
+                _ => println!("Command not recognized."),
+            };
+        }
+    }
 }
 
 fn main() -> ExitCode {
     println!("Welcome to DOMINON!");
 
+    let mut level_name = Some(String::from("1"));
+
     loop {
-        println!("\nWhich level would you like to play?");
+        if let None = level_name {
+            println!("\nWhich level would you like to play?");
 
-        let level_name = "1";
-        //         let mut input = String::new();
-        //         if let Err(e) = io::stdin().read_line(&mut input) {
-        //             println!("Failed to read from stdio. {e}");
-        //             continue;
-        //         }
-        //
-        //         let level_name = input.trim();
-        let level = level::load(level_name);
-        if let Err(e) = level {
-            println!("Failed to load level: {e}");
-            continue;
+            let mut input = String::new();
+            input.clear();
+            if let Err(e) = io::stdin().read_line(&mut input) {
+                println!("Failed to read from stdio. {e}");
+            } else {
+                level_name = Some(String::from(input.trim()));
+            }
+        } else if let Some(ref ln) = level_name {
+            let level = level::load(ln);
+            if let Err(e) = level {
+                println!("Failed to load level: {e}");
+                level_name = None;
+                continue;
+            }
+
+            println!("\nLEVEL {ln}");
+            let mut engine = Engine::new(level.unwrap());
+
+            if let Some(n) = play(&mut engine) {
+                level_name = Some(n);
+                continue;
+            } else {
+                return ExitCode::SUCCESS;
+            }
         }
-
-        println!("\nLEVEL {level_name}");
-        play(level.unwrap());
-        break;
     }
-
-    ExitCode::SUCCESS
 }

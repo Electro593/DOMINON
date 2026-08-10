@@ -1,14 +1,33 @@
-use crate::level::{FaceType, Level, Polyomino};
+use std::{error::Error, fmt};
 
+use crate::level::{Level, Polyomino};
+
+#[derive(Debug)]
 pub enum EngineError {
+    CannotUndo,
+    CannotRedo,
     PolyominoNotFound,
     PlacementOutOfBounds,
     PlacementCollision,
 }
 
+impl Error for EngineError {}
+
+impl fmt::Display for EngineError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::CannotUndo => write!(f, "No actions left to undo"),
+            Self::CannotRedo => write!(f, "No actions available to redo"),
+            Self::PolyominoNotFound => write!(f, "Piece does not exist"),
+            Self::PlacementOutOfBounds => write!(f, "Cannot place piece outside of the board"),
+            Self::PlacementCollision => write!(f, "Cannot place piece on top of another"),
+        }
+    }
+}
+
 pub struct Engine {
-    original_level: Level,
-    level: Level,
+    pub original_level: Level,
+    pub level: Level,
 }
 
 impl Engine {
@@ -19,9 +38,13 @@ impl Engine {
         }
     }
 
-    pub fn undo(&mut self) {}
+    pub fn undo(&mut self) -> Result<(), EngineError> {
+        Ok(())
+    }
 
-    pub fn redo(&mut self) {}
+    pub fn redo(&mut self) -> Result<(), EngineError> {
+        Ok(())
+    }
 
     pub fn reset(&mut self) -> Result<(), EngineError> {
         self.level = self.original_level.clone();
@@ -37,9 +60,9 @@ impl Engine {
 
         for face in polyomino.faces.iter_mut() {
             (face.dx, face.dy) = if clockwise {
-                (face.dx, -face.dy)
+                (-face.dy, face.dx)
             } else {
-                (-face.dx, face.dy)
+                (face.dy, -face.dx)
             };
         }
         Ok(())
@@ -68,7 +91,6 @@ impl Engine {
         }
 
         self.level.polyominoes.push(p);
-        // self.process_face_interactions(self.level.polyominoes.len())
         Ok(())
     }
 
@@ -90,33 +112,4 @@ impl Engine {
 
         Ok(())
     }
-
-//     fn process_face_interactions(&mut self, polyomino_index: usize) -> Result<(), EngineError> {
-//         let p0 = self.get_polyomino(polyomino_index)?;
-//
-//         for f0 in p.faces.iter() {
-//             let x = p.x.wrapping_add_signed(f.dx);
-//             let y = p.y.wrapping_add_signed(f.dy);
-//
-//             let mut interact = |x1: usize, y1: usize| -> Option<()> {
-//                 if let Some((f1, p1)) = self.level.face_at(x1, y1) {
-//                     match f.symbol {
-//                         FaceType::Mirror => {}
-//                         FaceType::Boom => {}
-//                         _ => {
-//                             if f.symbol as u8 == f1.symbol as u8 {
-//                                 self.damage_polyomino(hand_index);
-//                             }
-//                         }
-//                     }
-//                 }
-//                 None
-//             };
-//
-//             interact(x.wrapping_sub(1), y);
-//             interact(x.wrapping_add(1), y);
-//             interact(x, y.wrapping_sub(1));
-//             interact(x, y.wrapping_add(1));
-//         }
-//     }
 }
