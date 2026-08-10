@@ -1,11 +1,47 @@
 use std::fmt;
 use std::io;
+use std::iter;
 use std::process::ExitCode;
 
 mod engine;
 mod level;
 
 use crate::level::{CellType, FaceType, Level, Polyomino};
+
+struct AlphabetCounter {
+    count: usize,
+}
+
+impl AlphabetCounter {
+    fn new() -> Self {
+        AlphabetCounter { count: 1 }
+    }
+}
+
+impl Iterator for AlphabetCounter {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.count == 0 {
+            return None;
+        }
+
+        let mut value: Vec<char> = vec!['\0'; 14];
+        let mut i = 14;
+
+        let mut count = self.count;
+        self.count += 1;
+
+        while count > 0 {
+            i -= 1;
+            let n = count - 1;
+            value[i] = (b'A' + (n % 26) as u8) as char;
+            count = n / 26;
+        }
+
+        Some(String::from_iter(&value[i..14]))
+    }
+}
 
 fn face_type_to_string(face: FaceType) -> &'static str {
     match face {
@@ -171,11 +207,16 @@ impl fmt::Display for TextCell {
 }
 
 struct TextGrid {
+    x_labels: Vec<String>,
+    y_labels: Vec<String>,
     grid: Vec<Vec<TextCell>>,
 }
 
 impl TextGrid {
-    fn new(w: usize, h: usize) -> Self {
+    fn new(x_labels: Vec<String>, y_labels: Vec<String>) -> Self {
+        let w = x_labels.len();
+        let h = y_labels.len();
+
         let grid_width = w * 2 + 1;
         let grid_height = h * 3 + 1;
         let mut grid = Vec::with_capacity(grid_height);
@@ -200,7 +241,11 @@ impl TextGrid {
         }
         push_row(corner, hline);
 
-        TextGrid { grid }
+        TextGrid {
+            x_labels,
+            y_labels,
+            grid,
+        }
     }
 
     fn get(&self, gx: usize, gy: usize) -> Option<TextCell> {
@@ -226,25 +271,49 @@ impl TextGrid {
 
 impl fmt::Display for TextGrid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.grid
-                .iter()
-                .map(|r| r
-                    .iter()
+        let mut x_label_row = self
+            .x_labels
+            .iter()
+            .map(|l| format!("{:^7}", l.chars().take(6).collect::<String>()))
+            .collect::<String>();
+        x_label_row = format!("  {x_label_row}");
+
+        let y_labels = self
+            .y_labels
+            .iter()
+            .flat_map(|l| vec!["", "", l])
+            .chain(vec!["", ""]);
+
+        let content_rows = self
+            .grid
+            .iter()
+            .map(|r| {
+                r.iter()
                     .map(|c| c.to_string())
                     .collect::<Vec<String>>()
-                    .join(""))
-                .collect::<Vec<String>>()
-                .join("\n")
-        )
+                    .join("")
+            })
+            .chain(iter::once(x_label_row));
+
+        let labelled_rows = content_rows.zip(y_labels);
+
+        let y_label_width = self.y_labels.iter().map(String::len).max().unwrap_or(0);
+
+        let text = labelled_rows
+            .map(|(r, l)| format!("{l:<y_label_width$}{r}"))
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        write!(f, "{text}")
     }
 }
 
 fn display_board(level: &Level) {
     let (w, h) = level.bounds();
-    let mut grid = TextGrid::new(w, h);
+    let mut grid = TextGrid::new(
+        (1..=w).map(|n| n.to_string()).collect(),
+        AlphabetCounter::new().take(h).collect(),
+    );
 
     for y in 0..h {
         for x in 0..w {
@@ -286,11 +355,24 @@ fn display_hand(level: &Level) {
     let y_min = y0s.min().unwrap_or_default();
     let y_max = y1s.max().unwrap_or_default();
 
-    let ws = x0s.clone().zip(x1s).map(|(x0, x1)| x1.abs_diff(x0) + 1);
+    let xs = x0s.clone().zip(x1s);
+    let ws = xs.clone().map(|(x0, x1)| x1.abs_diff(x0) + 1);
     let w = ws.clone().sum::<usize>() + level.hand.len() - 1;
     let h = y_max.abs_diff(y_min) + 1;
 
-    let mut grid = TextGrid::new(w, h);
+    let mut grid = TextGrid::new(
+        xs.enumerate()
+            .flat_map(|(i, (x0, x1))| (x0..x1 + 2).map(move |n| (i, n)))
+            .map(|(i, n)| {
+                if n == 0 {
+                    (i + 1).to_string()
+                } else {
+                    String::new()
+                }
+            })
+            .collect(),
+        vec![String::new(); h],
+    );
 
     let mut px: usize = 0;
     for (p, (x0, pw)) in level.hand.iter().zip(x0s.zip(ws)) {
@@ -332,13 +414,14 @@ fn main() -> ExitCode {
     loop {
         println!("\nWhich level would you like to play?");
 
-        let mut input = String::new();
-        if let Err(e) = io::stdin().read_line(&mut input) {
-            println!("Failed to read from stdio. {e}");
-            continue;
-        }
-
-        let level_name = input.trim();
+        let level_name = "1";
+        //         let mut input = String::new();
+        //         if let Err(e) = io::stdin().read_line(&mut input) {
+        //             println!("Failed to read from stdio. {e}");
+        //             continue;
+        //         }
+        //
+        //         let level_name = input.trim();
         let level = level::load(level_name);
         if let Err(e) = level {
             println!("Failed to load level: {e}");
