@@ -2,7 +2,7 @@ mod engine;
 mod level;
 mod ringbuffer;
 
-use std::{error::Error, fmt, io, iter, mem::discriminant};
+use std::{fmt, io, iter, mem::discriminant};
 
 use crossterm;
 
@@ -416,16 +416,18 @@ fn display_hand(level: &Level) {
 }
 
 const HELP_STRING: &str = "Available commands:
+    Repeat the last action, or display help if none have been done yet.
     h     Print this help text.
-    q     Exit the game.
-    l     Load a new level.
-    b     Print the current state of the game.
-    x     Reset the level to its initial state. This can be undone.
-    y     Redo the last undo.
+    q     Quit the game.
+    w     Display the current state of the game.
+    e     Load a new level.
+    aN    Rotate polyomino N by 90 degrees counter-clockwise.
+    sNXY  Set polyomino N at board cell XY (X is alphabetical, Y is numerical).
+    dN    Rotate polyomino N by 90 degrees clockwise.
     z     Undo the last action.
-    cwN   Rotate polyomino N by 90 degrees clockwise.
-    ccwN  Rotate polyomino N by 90 degrees counter-clockwise.
-    pNXY  Move polyomino N to board cell XY (X is alphabetical, Y is numerical).";
+    x     Clear the level to its initial state. This can be undone.
+    c     Redo the last undo.
+";
 
 #[derive(Clone)]
 enum GameAction {
@@ -447,23 +449,18 @@ impl GameAction {
         let lower = input.to_ascii_lowercase();
         let ref mut chars = lower.chars().peekable();
 
-        let action = match chars.next() {
+        let command = chars.next();
+        let action = match command {
             None => Ok(Self::RepeatLast),
             Some('h') => Ok(Self::Help),
             Some('q') => Ok(Self::Quit),
-            Some('l') => Ok(Self::SwitchLevel),
-            Some('b') => Ok(Self::ShowBoard),
-            Some('x') => Ok(Self::Reset),
-            Some('y') => Ok(Self::Redo),
+            Some('w') => Ok(Self::ShowBoard),
+            Some('e') => Ok(Self::SwitchLevel),
             Some('z') => Ok(Self::Undo),
-            Some('c') => {
-                let cwr = Ok(chars.next_if(|c| *c == 'c').is_none()).and_then(|cw| {
-                    chars
-                        .next_if(|c| *c == 'w')
-                        .is_some()
-                        .then_some(cw)
-                        .ok_or(None)
-                });
+            Some('x') => Ok(Self::Reset),
+            Some('c') => Ok(Self::Redo),
+            Some('a') | Some('d') => {
+                let cw = command.unwrap() == 'd';
 
                 let ir = chars
                     .collect::<String>()
@@ -471,9 +468,9 @@ impl GameAction {
                     .map(|i| i - 1)
                     .map_err(|e| Some(format!("Invalid format for N: {e}.")));
 
-                ir.and_then(|i| cwr.map(|cw| Self::Rotate { i, cw }))
+                ir.map(|i| Self::Rotate { i, cw })
             }
-            Some('p') => {
+            Some('s') => {
                 let nc = chars.clone().take_while(|c| c.is_ascii_digit());
                 let xc = chars
                     .clone()
@@ -509,14 +506,24 @@ impl GameAction {
     }
 }
 
-fn clear_terminal() -> Result<(), Box<dyn Error>> {
-    crossterm::execute!(
+fn read_line() -> Option<String> {
+    let mut input = String::new();
+    input.clear();
+    if let Err(e) = io::stdin().read_line(&mut input) {
+        println!("Failed to read from stdio: {e}");
+        None
+    } else {
+        Some(input)
+    }
+}
+
+fn clear_terminal() {
+    let _ = crossterm::execute!(
         io::stdout(),
         crossterm::cursor::MoveTo(0, 0),
         crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
         crossterm::terminal::Clear(crossterm::terminal::ClearType::Purge)
-    )?;
-    Ok(())
+    );
 }
 
 fn play(engine: &mut Engine, level_name: &String) -> GameAction {
@@ -529,7 +536,7 @@ fn play(engine: &mut Engine, level_name: &String) -> GameAction {
             return GameAction::NextLevel;
         }
 
-        let _ = clear_terminal();
+        clear_terminal();
         println!("LEVEL {level_name}\n\nBOARD\n");
         display_board(level);
         println!("\nHAND\n");
@@ -543,14 +550,12 @@ fn play(engine: &mut Engine, level_name: &String) -> GameAction {
         loop {
             println!("What would you like to do?");
 
-            let mut input = String::new();
-            input.clear();
-            if let Err(e) = io::stdin().read_line(&mut input) {
-                println!("Failed to read from stdio. {e}");
-                continue;
+            let input = read_line();
+            if let None = input {
+                return GameAction::Quit;
             }
 
-            let action = GameAction::parse(input.trim().into());
+            let action = GameAction::parse(input.unwrap().trim().into());
 
             if let Err(e) = action {
                 println!("{e}");
@@ -565,60 +570,63 @@ fn play(engine: &mut Engine, level_name: &String) -> GameAction {
                 }
             };
 
+            let get_confirmation = || {
+                read_line()
+                    .map(|s| s.trim().eq_ignore_ascii_case("y"))
+                    .unwrap_or(true)
+            };
+
             match resolved_action {
                 GameAction::RepeatLast => continue,
                 GameAction::Help => println!("{HELP_STRING}"),
                 GameAction::ShowBoard => break,
                 GameAction::Reset => {
                     if let Err(e) = engine.reset() {
-                        println!("Cannot reset: {e}.");
+                        println!("{e}.");
                     } else {
-                        println!("Reset the board.");
                         break;
                     }
                 }
                 GameAction::Redo => {
                     if let Err(e) = engine.redo() {
-                        println!("Cannot redo: {e}.");
+                        println!("{e}.");
                     } else {
-                        println!("Redid one action.");
                         break;
                     }
                 }
                 GameAction::Undo => {
                     if let Err(e) = engine.undo() {
-                        println!("Cannot undo: {e}.");
+                        println!("{e}.");
                     } else {
-                        println!("Undid one action.");
                         break;
                     }
                 }
                 GameAction::Rotate { i, cw } => {
                     if let Err(e) = engine.rotate(i, cw) {
-                        println!("Cannot rotate piece: {e}.");
+                        println!("{e}.");
                     } else {
-                        println!(
-                            "Rotated piece {} {}.",
-                            i + 1,
-                            if cw { "clockwise" } else { "counter clockwise" }
-                        );
                         break;
                     }
                 }
                 GameAction::Place { i, x, y } => {
                     if let Err(e) = engine.place(i, x, y) {
-                        println!("Cannot place piece: {e}.");
+                        println!("{e}.");
                     } else {
-                        println!(
-                            "Placed piece {} at {}{}.",
-                            i + 1,
-                            AlphabetCounter::from(x + 1).unwrap(),
-                            y + 1
-                        );
                         break;
                     }
                 }
-                a => return a,
+                GameAction::SwitchLevel | GameAction::NextLevel => {
+                    println!("\nAre you sure you want to leave this puzzle? (y/N)");
+                    if get_confirmation() {
+                        return resolved_action;
+                    }
+                }
+                GameAction::Quit => {
+                    println!("\nAre you sure you want to exit the game? (y/N)");
+                    if get_confirmation() {
+                        return resolved_action;
+                    }
+                }
             };
         }
     }
@@ -632,13 +640,12 @@ fn load_level(levels: &Vec<String>, index: Option<usize>) -> Option<(Level, usiz
 
     let mut first = true;
     let mut index_mut = index;
-    let mut input = String::new();
 
     loop {
         match index_mut {
             Some(i) => {
                 if i >= levels.len() {
-                    println!("\nCongrats, you win!\n");
+                    println!("Congrats, you win!\n");
                     return None;
                 }
 
@@ -651,30 +658,22 @@ fn load_level(levels: &Vec<String>, index: Option<usize>) -> Option<(Level, usiz
                 }
             }
             None => {
-                println!("\nWhich level would you like to play?");
+                println!("Which level would you like to play?");
 
                 if first {
                     println!("Available: {}", levels.join(" "));
                     first = false;
                 }
 
-                input.clear();
-                match io::stdin().read_line(&mut input) {
-                    Ok(_) => {
-                        let trimmed = input.trim();
-                        if trimmed == "q" {
-                            return None;
-                        }
+                let input = read_line().unwrap_or(String::from("q"));
+                let trimmed = input.trim();
+                if trimmed == "q" {
+                    return None;
+                }
 
-                        match levels.iter().position(|l| l.eq(&String::from(trimmed))) {
-                            Some(i) => index_mut = Some(i),
-                            None => println!("Level must be one of the available options."),
-                        }
-                    }
-                    Err(e) => {
-                        println!("Failed to read from stdio. {e}");
-                        return None;
-                    }
+                match levels.iter().position(|l| l.eq(&String::from(trimmed))) {
+                    Some(i) => index_mut = Some(i),
+                    None => println!("Level must be one of the available options."),
                 }
             }
         }
@@ -698,6 +697,8 @@ fn main() {
                     GameAction::NextLevel => level_index = Some(index + 1),
                     _ => (),
                 }
+
+                clear_terminal();
             }
             None => return,
         }
