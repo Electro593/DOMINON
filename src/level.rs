@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::BufReader;
 
 use serde::Deserialize;
@@ -137,6 +137,14 @@ pub struct Level {
 }
 
 impl Level {
+    pub fn is_won(&self) -> bool {
+        self.hand.len() == 0 && self.polyominoes.len() == 0
+    }
+
+    pub fn is_lost(&self) -> bool {
+        self.hand.len() == 0 && self.polyominoes.len() > 0
+    }
+
     pub fn bounds(&self) -> (usize, usize) {
         let w = self.cells.iter().map(|r| r.len()).max().unwrap_or_default();
         let h = self.cells.len();
@@ -162,6 +170,25 @@ impl Level {
         }
         None
     }
+}
+
+pub fn list() -> Vec<String> {
+    let paths = fs::read_dir("levels");
+    if paths.is_err() {
+        return vec![];
+    }
+
+    let mut names: Vec<String> = vec![];
+    for dir_entry in paths.unwrap() {
+        if let Ok(d) = dir_entry {
+            let mut path = d.path();
+            if path.is_file() && path.set_extension("") {
+                names.push(path.file_name().unwrap().to_string_lossy().into())
+            }
+        }
+    }
+
+    names
 }
 
 pub fn load(name: &String) -> Result<Level, Box<dyn Error>> {

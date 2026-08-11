@@ -2,7 +2,7 @@ mod engine;
 mod level;
 mod ringbuffer;
 
-use std::{error::Error, fmt, io, iter, mem::discriminant, process::ExitCode};
+use std::{error::Error, fmt, io, iter, mem::discriminant};
 
 use crossterm;
 
@@ -424,7 +424,7 @@ fn display_hand(level: &Level) {
 const HELP_STRING: &str = "Available commands:
     h     Print this help text.
     q     Exit the game.
-    lL    Load a new level L. This will delete your current progress!
+    l     Load a new level.
     b     Print the current state of the game.
     x     Reset the level to its initial state. This can be undone.
     y     Redo the last undo.
@@ -438,7 +438,8 @@ enum GameAction {
     RepeatLast,
     Help,
     Quit,
-    SwitchLevel(String),
+    SwitchLevel,
+    NextLevel,
     ShowBoard,
     Reset,
     Redo,
@@ -456,7 +457,7 @@ impl GameAction {
             None => Ok(Self::RepeatLast),
             Some('h') => Ok(Self::Help),
             Some('q') => Ok(Self::Quit),
-            Some('l') => Ok(Self::SwitchLevel(chars.collect())),
+            Some('l') => Ok(Self::SwitchLevel),
             Some('b') => Ok(Self::ShowBoard),
             Some('x') => Ok(Self::Reset),
             Some('y') => Ok(Self::Redo),
@@ -523,22 +524,30 @@ fn clear_terminal() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn play(engine: &mut Engine, level_name: &String) -> Option<String> {
+fn play(engine: &mut Engine, level_name: &String) -> GameAction {
     let mut last_action = None;
 
     loop {
-        let _ = clear_terminal();
-
-        println!("LEVEL {level_name}");
-
         let level = engine.current();
-        println!("\nBOARD\n");
+
+        if level.is_won() {
+            return GameAction::NextLevel;
+        }
+
+        let _ = clear_terminal();
+        println!("LEVEL {level_name}\nBOARD\n");
         display_board(level);
         println!("\nHAND\n");
         display_hand(level);
+        println!();
+
+        if level.is_lost() {
+            println!("No more moves! Undo or reset to continue.");
+        }
 
         loop {
-            println!("\nWhat would you like to do?");
+            println!("What would you like to do?");
+
             let mut input = String::new();
             input.clear();
             if let Err(e) = io::stdin().read_line(&mut input) {
@@ -564,8 +573,6 @@ fn play(engine: &mut Engine, level_name: &String) -> Option<String> {
             match resolved_action {
                 GameAction::RepeatLast => continue,
                 GameAction::Help => println!("{HELP_STRING}"),
-                GameAction::Quit => return None,
-                GameAction::SwitchLevel(l) => return Some(l),
                 GameAction::ShowBoard => break,
                 GameAction::Reset => {
                     if let Err(e) = engine.reset() {
@@ -616,43 +623,81 @@ fn play(engine: &mut Engine, level_name: &String) -> Option<String> {
                         break;
                     }
                 }
+                a => return a,
             };
         }
     }
 }
 
-fn main() -> ExitCode {
-    println!("Welcome to DOMINON!");
+fn load_level(levels: &Vec<String>, index: Option<usize>) -> Option<(Level, usize)> {
+    if levels.is_empty() {
+        println!("No levels found! Are you running this in the correct directory?");
+        return None;
+    }
 
-    let mut level_name = Some(String::from("1"));
+    let mut first = true;
+    let mut index_mut = index;
+    let mut input = String::new();
 
     loop {
-        if let None = level_name {
-            println!("\nWhich level would you like to play?");
+        match index_mut {
+            Some(i) => match level::load(&levels[i]) {
+                Ok(level) => return Some((level, i)),
+                Err(e) => {
+                    println!("Failed to load level: {e}");
+                    index_mut = None;
+                }
+            },
+            None => {
+                println!("\nWhich level would you like to play?");
 
-            let mut input = String::new();
-            input.clear();
-            if let Err(e) = io::stdin().read_line(&mut input) {
-                println!("Failed to read from stdio. {e}");
-            } else {
-                level_name = Some(String::from(input.trim()));
-            }
-        } else if let Some(ref ln) = level_name {
-            let level = level::load(ln);
-            if let Err(e) = level {
-                println!("Failed to load level: {e}");
-                level_name = None;
-                continue;
-            }
+                if first {
+                    println!("Available: {}", levels.join(" "));
+                    first = false;
+                }
 
-            let mut engine = Engine::new(level.unwrap());
+                input.clear();
+                match io::stdin().read_line(&mut input) {
+                    Ok(_) => {
+                        let trimmed = input.trim();
+                        if trimmed == "q" {
+                            return None;
+                        }
 
-            if let Some(n) = play(&mut engine, ln) {
-                level_name = Some(n);
-                continue;
-            } else {
-                return ExitCode::SUCCESS;
+                        match levels.iter().position(|l| l.eq(&String::from(trimmed))) {
+                            Some(i) => index_mut = Some(i),
+                            None => println!("Level must be one of the available options."),
+                        }
+                    }
+                    Err(e) => {
+                        println!("Failed to read from stdio. {e}");
+                        return None;
+                    }
+                }
             }
+        }
+    }
+}
+
+fn main() {
+    println!("Welcome to DOMINON!");
+
+    let levels = level::list();
+    let mut level_index = Some(0);
+
+    loop {
+        match load_level(&levels, level_index) {
+            Some((level, index)) => {
+                let mut engine = Engine::new(level);
+
+                match play(&mut engine, &levels[index]) {
+                    GameAction::Quit => return,
+                    GameAction::SwitchLevel => level_index = None,
+                    GameAction::NextLevel => level_index = Some(index + 1),
+                    _ => (),
+                }
+            }
+            None => return,
         }
     }
 }
