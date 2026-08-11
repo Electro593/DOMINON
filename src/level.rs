@@ -37,10 +37,6 @@ pub enum FaceType {
     Eleven,
     #[serde(rename = "12")]
     Twelve,
-    #[serde(rename = "?")]
-    Mirror,
-    #[serde(rename = "*")]
-    Boom,
 }
 
 impl FaceType {
@@ -63,14 +59,6 @@ pub enum CellType {
     None,
     #[serde(rename = "*")]
     Basic,
-    #[serde(rename = "^")]
-    SlideUp,
-    #[serde(rename = "V")]
-    SlideDown,
-    #[serde(rename = "<")]
-    SlideLeft,
-    #[serde(rename = ">")]
-    SlideRight,
 }
 
 impl CellType {
@@ -160,11 +148,11 @@ impl Level {
             .unwrap_or(&CellType::None)
     }
 
-    pub fn face_at(&self, x: usize, y: usize) -> Option<(Face, Polyomino)> {
+    pub fn face_at(&self, x: usize, y: usize) -> Option<(&Face, &Polyomino)> {
         for p in self.polyominoes.iter() {
             for f in p.faces.iter() {
                 if p.x.wrapping_add_signed(f.dx) == x && p.y.wrapping_add_signed(f.dy) == y {
-                    return Some((*f, p.clone()));
+                    return Some((f, p));
                 }
             }
         }

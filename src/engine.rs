@@ -1,4 +1,4 @@
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, ptr};
 
 use crate::{level::Level, ringbuffer::RingBuffer};
 
@@ -8,6 +8,7 @@ pub enum EngineError {
     CannotRedo,
     PolyominoNotFound,
     PlacementOutOfBounds,
+    PlacementOverHole,
     PlacementCollision,
 }
 
@@ -19,8 +20,9 @@ impl fmt::Display for EngineError {
             Self::CannotUndo => write!(f, "No actions left to undo"),
             Self::CannotRedo => write!(f, "No actions available to redo"),
             Self::PolyominoNotFound => write!(f, "Piece does not exist"),
-            Self::PlacementOutOfBounds => write!(f, "Cannot place piece outside of the board"),
-            Self::PlacementCollision => write!(f, "Cannot place piece on top of another"),
+            Self::PlacementOutOfBounds => write!(f, "Pieces cannot go out of bounds"),
+            Self::PlacementOverHole => write!(f, "Pieces cannot overlap board holes"),
+            Self::PlacementCollision => write!(f, "Pieces cannot overlap each other"),
         }
     }
 }
@@ -109,13 +111,46 @@ impl Engine {
             if fx >= w || fy >= h {
                 return Err(EngineError::PlacementOutOfBounds);
             }
+        }
+
+        let faces = polyomino
+            .faces
+            .iter()
+            .map(|f| (f, x.wrapping_add_signed(f.dx), y.wrapping_add_signed(f.dy)));
+
+        for (_, fx, fy) in faces.clone() {
+            if level.cell_at(fx, fy).is_none() {
+                return Err(EngineError::PlacementOverHole);
+            }
 
             if level.face_at(fx, fy).is_some() {
                 return Err(EngineError::PlacementCollision);
             }
         }
 
-        level.polyominoes.push(polyomino);
+        let mut deleted = false;
+        for (f, fx, fy) in faces {
+            let mut try_delete = |dx, dy| {
+                let f1x = fx.checked_add_signed(dx).unwrap_or(w);
+                let f1y = fy.checked_add_signed(dy).unwrap_or(h);
+                if let Some((f1, p1)) = level.face_at(f1x, f1y) {
+                    if f1.symbol == f.symbol {
+                        let index = level.polyominoes.iter().position(|p| ptr::eq(p, p1));
+                        level.polyominoes.remove(index.unwrap());
+                        deleted = true;
+                    }
+                }
+            };
+
+            try_delete(-1, 0);
+            try_delete(1, 0);
+            try_delete(0, -1);
+            try_delete(0, 1);
+        }
+
+        if !deleted {
+            level.polyominoes.push(polyomino);
+        }
 
         self.push_mut(level);
         Ok(())

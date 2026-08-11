@@ -5,14 +5,14 @@
       "y": 1,
       "faces": [
         { "symbol": "1" },
-        { "symbol": "4", "dx": 1 },
+        { "symbol": "0", "dx": 1 },
         { "symbol": "5", "dx": 1, "dy": 1 }
       ]
     }
   ],
   "hand": [
-    { "faces": [{ "symbol": "0" }] },
-    { "faces": [{ "symbol": "1" }, { "symbol": "2", "dy": 1 }] },
+    { "faces": [{ "symbol": "1" }] },
+    { "faces": [{ "symbol": "0" }, { "symbol": "2", "dy": 1 }] },
     {
       "faces": [
         { "symbol": "12" },

@@ -81,8 +81,6 @@ fn face_type_to_string(face: FaceType) -> &'static str {
         FaceType::Ten => " 10 ",
         FaceType::Eleven => " 11 ",
         FaceType::Twelve => " 12 ",
-        FaceType::Mirror => " ?? ",
-        FaceType::Boom => " ** ",
     }
 }
 
@@ -90,10 +88,6 @@ fn cell_type_to_string(cell: CellType) -> &'static str {
     match cell {
         CellType::None => "    ",
         CellType::Basic => "    ",
-        CellType::SlideUp => " ^^ ",
-        CellType::SlideDown => " VV ",
-        CellType::SlideLeft => " <- ",
-        CellType::SlideRight => " -> ",
     }
 }
 
@@ -536,7 +530,7 @@ fn play(engine: &mut Engine, level_name: &String) -> GameAction {
         }
 
         let _ = clear_terminal();
-        println!("LEVEL {level_name}\nBOARD\n");
+        println!("LEVEL {level_name}\n\nBOARD\n");
         display_board(level);
         println!("\nHAND\n");
         display_hand(level);
@@ -642,13 +636,20 @@ fn load_level(levels: &Vec<String>, index: Option<usize>) -> Option<(Level, usiz
 
     loop {
         match index_mut {
-            Some(i) => match level::load(&levels[i]) {
-                Ok(level) => return Some((level, i)),
-                Err(e) => {
-                    println!("Failed to load level: {e}");
-                    index_mut = None;
+            Some(i) => {
+                if i >= levels.len() {
+                    println!("\nCongrats, you win!\n");
+                    return None;
                 }
-            },
+
+                match level::load(&levels[i]) {
+                    Ok(level) => return Some((level, i)),
+                    Err(e) => {
+                        println!("Failed to load level: {e}");
+                        index_mut = None;
+                    }
+                }
+            }
             None => {
                 println!("\nWhich level would you like to play?");
 
