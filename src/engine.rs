@@ -96,15 +96,17 @@ impl Engine {
             return Err(EngineError::PolyominoNotFound);
         }
 
+        let (w, h) = level.bounds();
+
         let mut polyomino = level.hand.remove(hand_index);
         polyomino.x = x;
         polyomino.y = y;
 
         for face in polyomino.faces.iter() {
-            let fx = x.wrapping_add_signed(face.dx);
-            let fy = y.wrapping_add_signed(face.dy);
+            let fx = x.checked_add_signed(face.dx).unwrap_or(w);
+            let fy = y.checked_add_signed(face.dy).unwrap_or(h);
 
-            if fx >= 256 || fy >= 256 {
+            if fx >= w || fy >= h {
                 return Err(EngineError::PlacementOutOfBounds);
             }
 

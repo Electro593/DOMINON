@@ -39,19 +39,19 @@ impl AlphabetCounter {
         Some(String::from_iter(&value[i..14]))
     }
 
-    fn parse(str: &String) -> Result<usize, &'static str> {
+    fn parse(str: &String) -> Option<usize> {
         let mut count: usize = 0;
 
         for c in str.to_ascii_uppercase().chars() {
             if !c.is_ascii_alphabetic() {
-                return Err("Expected a series of letters");
+                return None;
             }
 
             count = count * 26 + 1;
             count += c.to_ascii_uppercase() as usize - 'A' as usize;
         }
 
-        Ok(count)
+        (count != 0).then_some(count)
     }
 }
 
@@ -490,20 +490,21 @@ impl GameAction {
                 let ir = nc
                     .collect::<String>()
                     .parse::<usize>()
-                    .map(|n| n - 1)
-                    .map_err(|e| Some(format!("Invalid format for N: {e}.")));
+                    .map_err(|_| "Invalid format for N.")
+                    .and_then(|n| n.checked_sub(1).ok_or("N must be at least 1"));
 
                 let xr = AlphabetCounter::parse(&xc.collect::<String>())
                     .map(|n| n - 1)
-                    .map_err(|e| Some(format!("Invalid format for X: {e}.")));
+                    .ok_or("Invalid format for X.");
 
                 let yr = yc
                     .collect::<String>()
                     .parse::<usize>()
-                    .map(|n| n - 1)
-                    .map_err(|e| Some(format!("Invalid format for Y: {e}.")));
+                    .map_err(|_| "Invalid format for Y.")
+                    .and_then(|n| n.checked_sub(1).ok_or("Y must be at least 1"));
 
                 ir.and_then(|i| xr.and_then(|x| yr.map(|y| Self::Place { i, x, y })))
+                    .map_err(|e| Some(String::from(e)))
             }
             _ => Err(None),
         };
