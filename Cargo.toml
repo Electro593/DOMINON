@@ -1,9 +1,15 @@
 [package]
 name = "dominon"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
+publish = false
 
 [dependencies]
+color-eyre = "0.6.5"
 crossterm = "0.29.0"
+ratatui = "0.30.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+textwrap = "0.16.2"
+tui-big-text = "0.8.8"
+tui-widget-list = "0.15.3"

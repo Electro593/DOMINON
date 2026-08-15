@@ -7,7 +7,7 @@ use serde::Deserialize;
 #[derive(Default, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 #[repr(u8)]
-pub enum FaceType {
+pub enum RawFaceType {
     #[serde(skip)]
     #[default]
     None,
@@ -39,7 +39,7 @@ pub enum FaceType {
     Twelve,
 }
 
-impl FaceType {
+impl RawFaceType {
     pub fn is_none(&self) -> bool {
         match self {
             Self::None => true,
@@ -53,7 +53,7 @@ impl FaceType {
 }
 
 #[derive(Default, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CellType {
+pub enum RawCellType {
     #[serde(rename = " ")]
     #[default]
     None,
@@ -61,10 +61,10 @@ pub enum CellType {
     Basic,
 }
 
-impl CellType {
+impl RawCellType {
     pub fn is_none(&self) -> bool {
         match self {
-            CellType::None => true,
+            RawCellType::None => true,
             _ => false,
         }
     }
@@ -75,8 +75,8 @@ impl CellType {
 }
 
 #[derive(Deserialize, Copy, Clone)]
-pub struct Face {
-    pub symbol: FaceType,
+pub struct RawFace {
+    pub symbol: RawFaceType,
     #[serde(default)]
     pub dx: isize,
     #[serde(default)]
@@ -84,16 +84,16 @@ pub struct Face {
 }
 
 #[derive(Deserialize, Clone)]
-pub struct Polyomino {
+pub struct RawPolyomino {
     #[serde(default)]
     pub x: usize,
     #[serde(default)]
     pub y: usize,
     #[serde(default)]
-    pub faces: Vec<Face>,
+    pub faces: Vec<RawFace>,
 }
 
-impl Polyomino {
+impl RawPolyomino {
     pub fn bounds(&self) -> (isize, isize, isize, isize) {
         let xs = self.faces.iter().map(|r| r.dx);
         let ys = self.faces.iter().map(|r| r.dy);
@@ -108,20 +108,20 @@ impl Polyomino {
         (min, min, max, max)
     }
 
-    pub fn face_at(&self, dx: isize, dy: isize) -> FaceType {
+    pub fn face_at(&self, dx: isize, dy: isize) -> RawFaceType {
         self.faces
             .iter()
             .find(|f| f.dx == dx && f.dy == dy)
             .map(|f| f.symbol)
-            .unwrap_or(FaceType::None)
+            .unwrap_or(RawFaceType::None)
     }
 }
 
 #[derive(Deserialize, Clone)]
 pub struct Level {
-    pub polyominoes: Vec<Polyomino>,
-    pub hand: Vec<Polyomino>,
-    pub cells: Vec<Vec<CellType>>,
+    pub polyominoes: Vec<RawPolyomino>,
+    pub hand: Vec<RawPolyomino>,
+    pub cells: Vec<Vec<RawCellType>>,
 }
 
 impl Level {
@@ -139,16 +139,16 @@ impl Level {
         (w, h)
     }
 
-    pub fn cell_at(&self, x: usize, y: usize) -> CellType {
+    pub fn cell_at(&self, x: usize, y: usize) -> RawCellType {
         *self
             .cells
             .get(y)
             .unwrap_or(&vec![])
             .get(x)
-            .unwrap_or(&CellType::None)
+            .unwrap_or(&RawCellType::None)
     }
 
-    pub fn face_at(&self, x: usize, y: usize) -> Option<(&Face, &Polyomino)> {
+    pub fn face_at(&self, x: usize, y: usize) -> Option<(&RawFace, &RawPolyomino)> {
         for p in self.polyominoes.iter() {
             for f in p.faces.iter() {
                 if p.x.wrapping_add_signed(f.dx) == x && p.y.wrapping_add_signed(f.dy) == y {

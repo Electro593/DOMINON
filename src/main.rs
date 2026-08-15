@@ -1,6 +1,8 @@
+mod board;
 mod engine;
 mod level;
 mod ringbuffer;
+mod tui;
 
 use std::{fmt, io, iter, mem::discriminant};
 
@@ -8,7 +10,7 @@ use crossterm;
 
 use crate::{
     engine::Engine,
-    level::{CellType, FaceType, Level, Polyomino},
+    level::{Level, RawCellType, RawFaceType, RawPolyomino},
 };
 
 struct AlphabetCounter {
@@ -65,29 +67,29 @@ impl Iterator for AlphabetCounter {
     }
 }
 
-fn face_type_to_string(face: FaceType) -> &'static str {
+fn face_type_to_string(face: RawFaceType) -> &'static str {
     match face {
-        FaceType::None => "    ",
-        FaceType::Zero => "  0 ",
-        FaceType::One => "  1 ",
-        FaceType::Two => "  2 ",
-        FaceType::Three => "  3 ",
-        FaceType::Four => "  4 ",
-        FaceType::Five => "  5 ",
-        FaceType::Six => "  6 ",
-        FaceType::Seven => "  7 ",
-        FaceType::Eight => "  8 ",
-        FaceType::Nine => "  9 ",
-        FaceType::Ten => " 10 ",
-        FaceType::Eleven => " 11 ",
-        FaceType::Twelve => " 12 ",
+        RawFaceType::None => "    ",
+        RawFaceType::Zero => "  0 ",
+        RawFaceType::One => "  1 ",
+        RawFaceType::Two => "  2 ",
+        RawFaceType::Three => "  3 ",
+        RawFaceType::Four => "  4 ",
+        RawFaceType::Five => "  5 ",
+        RawFaceType::Six => "  6 ",
+        RawFaceType::Seven => "  7 ",
+        RawFaceType::Eight => "  8 ",
+        RawFaceType::Nine => "  9 ",
+        RawFaceType::Ten => " 10 ",
+        RawFaceType::Eleven => " 11 ",
+        RawFaceType::Twelve => " 12 ",
     }
 }
 
-fn cell_type_to_string(cell: CellType) -> &'static str {
+fn cell_type_to_string(cell: RawCellType) -> &'static str {
     match cell {
-        CellType::None => "    ",
-        CellType::Basic => "    ",
+        RawCellType::None => "    ",
+        RawCellType::Basic => "    ",
     }
 }
 
@@ -161,8 +163,8 @@ enum TextCell {
     Corner(TextCellCorner),
     HLine(TextCellHLine),
     VLine(TextCellVLine),
-    Face(FaceType),
-    Cell(CellType),
+    Face(RawFaceType),
+    Cell(RawCellType),
     Pivot,
 }
 
@@ -242,8 +244,8 @@ impl TextGrid {
 
         for _ in 0..h {
             push_row(TextCell::Corner(TextCellCorner::None), hline);
-            push_row(vline, TextCell::Face(FaceType::None));
-            push_row(vline, TextCell::Cell(CellType::None));
+            push_row(vline, TextCell::Face(RawFaceType::None));
+            push_row(vline, TextCell::Cell(RawCellType::None));
         }
         push_row(corner, hline);
 
@@ -358,7 +360,7 @@ fn display_board(level: &Level) {
 }
 
 fn display_hand(level: &Level) {
-    let bounds = level.hand.iter().map(Polyomino::bounds);
+    let bounds = level.hand.iter().map(RawPolyomino::bounds);
     let x0s = bounds.clone().map(|b| b.0);
     let y0s = bounds.clone().map(|b| b.1);
     let x1s = bounds.clone().map(|b| b.2);
@@ -416,7 +418,7 @@ fn display_hand(level: &Level) {
 }
 
 const HELP_STRING: &str = "Available commands:
-    Repeat the last action, or display help if none have been done yet.
+          Repeat the last action, or display help if none have been done yet.
     h     Print this help text.
     q     Quit the game.
     w     Display the current state of the game.
@@ -452,7 +454,9 @@ impl GameAction {
         let command = chars.next();
         let action = match command {
             None => Ok(Self::RepeatLast),
-            Some('h') => Ok(Self::Help),
+            Some('h') => (chars.peek().is_none() || chars.collect::<String>() == "elp")
+                .then_some(Self::Help)
+                .ok_or(None),
             Some('q') => Ok(Self::Quit),
             Some('w') => Ok(Self::ShowBoard),
             Some('e') => Ok(Self::SwitchLevel),
@@ -681,10 +685,14 @@ fn load_level(levels: &Vec<String>, index: Option<usize>) -> Option<(Level, usiz
 }
 
 fn main() {
+    crate::tui::start();
+    return;
+
     println!("Welcome to DOMINON!");
 
     let levels = level::list();
-    let mut level_index = Some(0);
+    // let mut level_index = Some(0);
+    let mut level_index = None;
 
     loop {
         match load_level(&levels, level_index) {
