@@ -1,28 +1,81 @@
 use color_eyre::eyre::Result;
-use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Flex, Layout, Rect, Size},
     style::Style,
-    widgets::{Block, BorderType, Paragraph, StatefulWidget, Widget},
+    widgets::{Block, BorderType, Paragraph, Widget},
 };
 use tui_big_text::{BigText, PixelSize};
-use tui_widget_list::{ListBuilder, ListState, ListView, ScrollDirection, hit_test::Hit};
 
-use crate::tui::{Screen, screen::ScreenWidget};
+use crate::tui::{
+    Screen,
+    screen::ScreenWidget,
+    widget::{Button, ButtonState, EventHandler},
+};
 
 #[derive(Clone, Debug)]
 pub struct MainMenuScreen {
     focus: bool,
-    list_state: ListState,
+    selected: Option<usize>,
+    button_state: [ButtonState; 2],
 }
 
 impl MainMenuScreen {
     pub fn new() -> Self {
         MainMenuScreen {
             focus: true,
-            list_state: ListState::new_with_index(Some(0)),
+            selected: Some(0),
+            button_state: [ButtonState::new(), ButtonState::new()],
         }
+    }
+
+    fn select_prev(&mut self) {
+        self.selected = self.selected.map_or_else(
+            || Some(1),
+            |i| {
+                let next = (i + (2 - 1)) % 2;
+                self.button_state[i].focus(false);
+                self.button_state[next].focus(true);
+                Some(next)
+            },
+        );
+    }
+
+    fn select_next(&mut self) {
+        self.selected = self.selected.map_or_else(
+            || Some(0),
+            |i| {
+                let next = (i + 1) % 2;
+                self.button_state[i].focus(false);
+                self.button_state[next].focus(true);
+                Some(next)
+            },
+        );
+    }
+}
+
+impl EventHandler for MainMenuScreen {
+    fn handle_event(&mut self, event: &Event, _: bool) -> bool {
+        match event {
+            Event::Key(key_event) if self.focus => match key_event.kind {
+                KeyEventKind::Press | KeyEventKind::Repeat => match key_event.code {
+                    KeyCode::Up => self.select_prev(),
+                    KeyCode::Down => self.select_next(),
+                    _ => {}
+                },
+                _ => {}
+            },
+            Event::Mouse(mouse_event) if self.focus => match mouse_event.kind {
+                MouseEventKind::ScrollDown => self.select_next(),
+                MouseEventKind::ScrollUp => self.select_prev(),
+                _ => {}
+            },
+            Event::FocusLost => self.focus = false,
+            Event::FocusGained => self.focus = true,
+            _ => {}
+        };
+        false
     }
 }
 
@@ -45,6 +98,8 @@ impl ScreenWidget for &mut MainMenuScreen {
         let center_layout = Layout::vertical([
             Constraint::Length(5),
             Constraint::Length(8),
+            Constraint::Length(3),
+            Constraint::Length(3),
             Constraint::Fill(1),
         ])
         .split(frame_layout[0]);
@@ -67,96 +122,43 @@ impl ScreenWidget for &mut MainMenuScreen {
             .build()
             .render(center_layout[1], buf);
 
-        // Button list
-        ListView::new(
-            ListBuilder::new(|context| {
-                let is_selected = context.is_selected && self.focus;
+        fn make_button<'a>(
+            state: &'a mut ButtonState,
+            mut text: String,
+        ) -> Button<'a, Paragraph<'a>> {
+            if state.focused {
+                text = format!("> {text}")
+            }
 
-                let selected_text = |text: &str| {
-                    if is_selected {
-                        format!("> {text}")
-                    } else {
-                        String::from(text)
-                    }
-                };
+            let mut block = Block::bordered();
+            if state.focused {
+                block = block.border_type(BorderType::Double);
+            }
 
-                let mut item = match context.index {
-                    0 => Paragraph::new(selected_text("Level Select")),
-                    _ => Paragraph::new(selected_text("Quit")),
-                };
+            Button::new(Paragraph::new(text).centered().block(block), state)
+        }
 
-                let mut block = Block::bordered();
-                if is_selected {
-                    block = block.border_type(BorderType::Double);
-                }
-
-                item = item.centered().block(block);
-                return (item, 3);
-            }),
-            2,
-        )
-        .scroll_direction(ScrollDirection::Forward)
-        .infinite_scrolling(true)
-        .render(center_layout[2], buf, &mut self.list_state);
+        make_button(&mut self.button_state[0], "Level Select".into()).render(center_layout[2], buf);
+        make_button(&mut self.button_state[1], "Quit".into()).render(center_layout[3], buf);
 
         Ok(())
     }
 
-    fn handle_event(self, event: Event, enhanced_keyboard: bool) -> Result<Option<Screen>> {
-        let screens = [Screen::LevelSelect, Screen::None];
+    fn handle_screen_event(self, event: &Event, enhanced_keyboard: bool) -> Result<Option<Screen>> {
+        let _ = (&mut self.button_state[0]).handle_event(event, enhanced_keyboard)
+            || (&mut self.button_state[1]).handle_event(event, enhanced_keyboard)
+            || self.handle_event(event, enhanced_keyboard);
 
-        let confirm = |i: Option<usize>| {
-            if self.focus && i.is_some() {
-                Ok(Some(screens[i.unwrap()].clone()))
-            } else {
-                Ok(None)
-            }
-        };
-
-        match event {
-            Event::Key(key_event) if self.focus => match key_event.kind {
-                KeyEventKind::Press | KeyEventKind::Repeat => match key_event.code {
-                    KeyCode::Up => self.list_state.previous(),
-                    KeyCode::Down => self.list_state.next(),
-                    KeyCode::Esc => self.list_state.select(None),
-                    KeyCode::Enter | KeyCode::Char(' ') if !enhanced_keyboard => {
-                        return confirm(self.list_state.selected);
-                    }
-                    _ => {}
-                },
-                KeyEventKind::Release => match key_event.code {
-                    KeyCode::Enter | KeyCode::Char(' ') => {
-                        return confirm(self.list_state.selected);
-                    }
-                    _ => {}
-                },
-            },
-            Event::Mouse(mouse_event) if self.focus => match mouse_event.kind {
-                MouseEventKind::ScrollDown => self.list_state.next(),
-                MouseEventKind::ScrollUp => self.list_state.previous(),
-                MouseEventKind::Down(_) | MouseEventKind::Up(_) => {
-                    let hit = self
-                        .list_state
-                        .hit_test(mouse_event.column, mouse_event.row)
-                        .and_then(|h| match h {
-                            Hit::Area => None,
-                            Hit::Item(index) => Some(index),
-                        });
-
-                    match mouse_event.kind {
-                        MouseEventKind::Down(MouseButton::Left) => {
-                            self.list_state.select(hit.or(Some(0)))
-                        }
-                        MouseEventKind::Up(MouseButton::Left) => return confirm(hit),
-                        _ => {}
-                    }
-                }
-                _ => {}
-            },
-            Event::FocusLost => self.focus = false,
-            Event::FocusGained => self.focus = true,
-            _ => {}
+        if self.button_state[0].clicked {
+            self.selected = Some(0);
+            return Ok(Some(Screen::LevelSelect));
         }
+
+        if self.button_state[1].clicked {
+            self.selected = Some(1);
+            return Ok(Some(Screen::None));
+        }
+
         Ok(None)
     }
 }

@@ -434,7 +434,6 @@ dependencies = [
  "serde_json",
  "textwrap",
  "tui-big-text",
- "tui-widget-list",
 ]
 
 [[package]]
@@ -1717,16 +1716,6 @@ dependencies = [
  "derive_builder",
  "font8x8",
  "itertools 0.15.0",
- "ratatui-core",
- "ratatui-widgets",
-]
-
-[[package]]
-name = "tui-widget-list"
-version = "0.15.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39fc4e2d4f0673ad55213e1db3203b2f5962d8e99acbc54faa59318c435b010a"
-dependencies = [
  "ratatui-core",
  "ratatui-widgets",
 ]

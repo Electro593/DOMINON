@@ -22,6 +22,7 @@ use crate::{
 mod level_select;
 mod main_menu;
 mod screen;
+mod widget;
 
 #[derive(Clone, Debug)]
 enum Screen {
@@ -74,7 +75,9 @@ impl App {
             }
 
             let new_screen = match &mut self.screen {
-                Screen::MainMenu(screen) => screen.handle_event(event, self.enhanced_keyboard),
+                Screen::MainMenu(screen) => {
+                    screen.handle_screen_event(&event, self.enhanced_keyboard)
+                }
                 _ => Ok(None),
             }?;
 

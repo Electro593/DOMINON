@@ -28,7 +28,7 @@ impl ScreenWidget for &mut LevelSelectScreen {
         Ok(())
     }
 
-    fn handle_event(self, event: Event, enhanced_keyboard: bool) -> Result<Option<Screen>> {
+    fn handle_screen_event(self, event: &Event, enhanced_keyboard: bool) -> Result<Option<Screen>> {
         Ok(None)
     }
 }

@@ -12,7 +12,7 @@ use ratatui::{
 use crate::tui::Screen;
 
 pub trait ScreenWidget: Sized {
-    fn handle_event(self, event: Event, enhanced_keyboard: bool) -> Result<Option<Screen>>;
+    fn handle_screen_event(self, event: &Event, enhanced_keyboard: bool) -> Result<Option<Screen>>;
     fn try_render(self, area: Rect, buf: &mut Buffer) -> Result<(), Size>;
 }
 
