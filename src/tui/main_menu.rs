@@ -3,15 +3,16 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Flex, Layout, Rect, Size},
-    style::Style,
+    style::{Style, Stylize},
+    text::{Line, Span},
     widgets::{Block, BorderType, Paragraph, Widget},
 };
 use tui_big_text::{BigText, PixelSize};
 
 use crate::tui::{
     Screen,
-    screen::ScreenWidget,
-    widget::{Button, ButtonState, EventHandler},
+    screen::{ScreenWidget, screen_style},
+    widget::{Button, ButtonState, EventHandler, Focusable},
 };
 
 #[derive(Clone, Debug)]
@@ -122,20 +123,33 @@ impl ScreenWidget for &mut MainMenuScreen {
             .build()
             .render(center_layout[1], buf);
 
-        fn make_button<'a>(
-            state: &'a mut ButtonState,
-            mut text: String,
-        ) -> Button<'a, Paragraph<'a>> {
-            if state.focused {
-                text = format!("> {text}")
-            }
+        fn make_button<'a>(state: &'a mut ButtonState, text: String) -> Button<'a, Paragraph<'a>> {
+            let mut chars = text.chars();
+            let first = chars.next();
+            let rest = chars.collect::<String>();
+
+            let spans = vec![
+                state.focused.then(|| Span::raw("> ")),
+                first.map(|c| Span::raw(c.to_string()).magenta()),
+                Some(Span::raw(rest)),
+            ]
+            .into_iter()
+            .filter_map(|s| s)
+            .collect::<Vec<Span>>();
+
+            let line = Line::from(spans).style(screen_style());
 
             let mut block = Block::bordered();
             if state.focused {
                 block = block.border_type(BorderType::Double);
             }
 
-            Button::new(Paragraph::new(text).centered().block(block), state)
+            let mut button = Button::new(Paragraph::new(line).centered().block(block), state);
+            if let Some(key) = first {
+                button = button.key(KeyCode::Char(key.to_ascii_lowercase()));
+            }
+
+            button
         }
 
         make_button(&mut self.button_state[0], "Level Select".into()).render(center_layout[2], buf);

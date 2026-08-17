@@ -3,7 +3,7 @@ use crossterm::event::Event;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Flex, Layout, Rect, Size},
-    style::Stylize,
+    style::{Color, Style, Stylize},
     symbols::border,
     text::Line,
     widgets::{Block, Clear, Paragraph, Widget, Wrap},
@@ -18,6 +18,10 @@ pub trait ScreenWidget: Sized {
 
 pub struct ScreenWrapper<T>(pub T);
 
+pub fn screen_style() -> Style {
+    Style::new().fg(Color::Indexed(222)).bg(Color::Indexed(17))
+}
+
 impl<T> Widget for ScreenWrapper<T>
 where
     T: ScreenWidget,
@@ -28,7 +32,8 @@ where
             .title_bottom(
                 Line::from(format!("v{}", env!("CARGO_PKG_VERSION")).italic()).right_aligned(),
             )
-            .border_set(border::THICK);
+            .border_set(border::THICK)
+            .style(screen_style());
 
         let inner = frame_block.inner(area);
         frame_block.render(area, buf);
