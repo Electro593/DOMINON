@@ -13,7 +13,7 @@ use crate::tui::{
     Screen,
     level_select::LevelSelectScreen,
     screen::{ScreenWidget, screen_style},
-    widget::{Button, ButtonState, EventHandler, Focusable},
+    widget::{Button, ButtonState, EventHandler},
 };
 
 #[derive(Debug)]
@@ -37,8 +37,7 @@ impl MainMenuScreen {
             || Some(1),
             |i| {
                 let next = (i + (2 - 1)) % 2;
-                self.button_state[i].focus(false);
-                self.button_state[next].focus(true);
+                self.selected = Some(next);
                 Some(next)
             },
         );
@@ -49,8 +48,7 @@ impl MainMenuScreen {
             || Some(0),
             |i| {
                 let next = (i + 1) % 2;
-                self.button_state[i].focus(false);
-                self.button_state[next].focus(true);
+                self.selected = Some(next);
                 Some(next)
             },
         );
@@ -58,17 +56,18 @@ impl MainMenuScreen {
 }
 
 impl EventHandler for MainMenuScreen {
-    fn handle_event(&mut self, event: &Event, _: bool) -> bool {
+    fn handle_event(&mut self, event: &Event, focused: bool, _: bool) -> bool {
         match event {
-            Event::Key(key_event) if self.focus => match key_event.kind {
+            Event::Key(key_event) if focused => match key_event.kind {
                 KeyEventKind::Press | KeyEventKind::Repeat => match key_event.code {
                     KeyCode::Up => self.select_prev(),
                     KeyCode::Down => self.select_next(),
+                    KeyCode::Esc => self.focus = false,
                     _ => {}
                 },
                 _ => {}
             },
-            Event::Mouse(mouse_event) if self.focus => match mouse_event.kind {
+            Event::Mouse(mouse_event) if focused => match mouse_event.kind {
                 MouseEventKind::ScrollDown => self.select_next(),
                 MouseEventKind::ScrollUp => self.select_prev(),
                 _ => {}
@@ -124,13 +123,17 @@ impl ScreenWidget for &mut MainMenuScreen {
             .build()
             .render(center_layout[1], buf);
 
-        fn make_button<'a>(state: &'a mut ButtonState, text: String) -> Button<'a, Paragraph<'a>> {
+        fn make_button<'a>(
+            state: &'a mut ButtonState,
+            focused: bool,
+            text: String,
+        ) -> Button<'a, Paragraph<'a>> {
             let mut chars = text.chars();
             let first = chars.next();
             let rest = chars.collect::<String>();
 
             let spans = vec![
-                state.focused.then(|| Span::raw("> ")),
+                focused.then(|| Span::raw("> ")),
                 first.map(|c| Span::raw(c.to_string()).magenta()),
                 Some(Span::raw(rest)),
             ]
@@ -144,7 +147,7 @@ impl ScreenWidget for &mut MainMenuScreen {
             if state.hovered {
                 block = block.border_style(Style::new().green());
             }
-            if state.focused {
+            if focused {
                 block = block.border_type(BorderType::Double);
             }
 
@@ -156,16 +159,32 @@ impl ScreenWidget for &mut MainMenuScreen {
             button
         }
 
-        make_button(&mut self.button_state[0], "Level Select".into()).render(center_layout[2], buf);
-        make_button(&mut self.button_state[1], "Quit".into()).render(center_layout[3], buf);
+        make_button(
+            &mut self.button_state[0],
+            self.selected == Some(0),
+            "Level Select".into(),
+        )
+        .render(center_layout[2], buf);
+        make_button(
+            &mut self.button_state[1],
+            self.selected == Some(1),
+            "Quit".into(),
+        )
+        .render(center_layout[3], buf);
 
         Ok(())
     }
 
     fn handle_screen_event(self, event: &Event, enhanced_keyboard: bool) -> Result<Option<Screen>> {
-        let _ = (&mut self.button_state[0]).handle_event(event, enhanced_keyboard)
-            || (&mut self.button_state[1]).handle_event(event, enhanced_keyboard)
-            || self.handle_event(event, enhanced_keyboard);
+        let _ = (&mut self.button_state[0]).handle_event(
+            event,
+            self.selected == Some(0),
+            enhanced_keyboard,
+        ) || (&mut self.button_state[1]).handle_event(
+            event,
+            self.selected == Some(1),
+            enhanced_keyboard,
+        ) || self.handle_event(event, self.focus, enhanced_keyboard);
 
         if self.button_state[0].clicked {
             self.selected = Some(0);

@@ -2,46 +2,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 pub trait EventHandler {
-    fn handle_event(&mut self, event: &Event, enhanced_keyboard: bool) -> bool;
-}
-
-fn hit_test(area: Rect, column: u16, row: u16) -> bool {
-    area.left() <= column && column < area.right() && row >= area.top() && row < area.bottom()
-}
-
-pub trait Hoverable {
-    fn hover(&mut self, hovered: bool);
-
-    fn handle_hover(&mut self, area: Rect, event: &Event) {
-        match event {
-            Event::Mouse(mouse_event) => {
-                self.hover(hit_test(area, mouse_event.column, mouse_event.row));
-            }
-            Event::Resize(_, _) => self.hover(false),
-            _ => {}
-        }
-    }
-}
-
-pub trait Focusable {
-    fn focused(&self) -> bool;
-    fn focus(&mut self, focused: bool);
-
-    fn handle_focus(&mut self, event: &Event) {
-        let focused = self.focused();
-        match event {
-            Event::Key(key_event) if focused => match key_event.code {
-                KeyCode::Esc => match key_event.kind {
-                    KeyEventKind::Press | KeyEventKind::Repeat => {
-                        self.focus(false);
-                    }
-                    _ => {}
-                },
-                _ => {}
-            },
-            _ => {}
-        };
-    }
+    fn handle_event(&mut self, event: &Event, focused: bool, enhanced_keyboard: bool) -> bool;
 }
 
 #[derive(Clone, Debug)]
@@ -49,7 +10,6 @@ pub struct ButtonState {
     key: Option<KeyCode>,
     pub area: Rect,
     pub hovered: bool,
-    pub focused: bool,
     pub pressed: bool,
     pub clicked: bool,
 }
@@ -60,7 +20,6 @@ impl ButtonState {
             key: None,
             area: Rect::ZERO,
             hovered: false,
-            focused: false,
             pressed: false,
             clicked: false,
         }
@@ -78,10 +37,6 @@ impl ButtonState {
             self.clicked = true;
         }
         self.pressed = pressed;
-    }
-
-    pub fn cancel(&mut self) {
-        self.pressed = false;
     }
 }
 
@@ -110,26 +65,8 @@ impl<T: Widget> Widget for Button<'_, T> {
     }
 }
 
-impl Hoverable for ButtonState {
-    fn hover(&mut self, hovered: bool) {
-        self.hovered = hovered;
-    }
-}
-
-impl Focusable for ButtonState {
-    fn focused(&self) -> bool {
-        self.focused
-    }
-
-    fn focus(&mut self, focused: bool) {
-        self.focused = focused;
-    }
-}
-
 impl EventHandler for ButtonState {
-    fn handle_event(&mut self, event: &Event, enhanced_keyboard: bool) -> bool {
-        self.handle_hover(self.area, event);
-
+    fn handle_event(&mut self, event: &Event, focused: bool, enhanced_keyboard: bool) -> bool {
         match event {
             Event::Key(key_event) => match key_event.kind {
                 KeyEventKind::Press | KeyEventKind::Repeat => {
@@ -142,11 +79,11 @@ impl EventHandler for ButtonState {
                         return true;
                     }
 
-                    if self.focused {
+                    if focused {
                         match key_event.code {
                             KeyCode::Esc => {
                                 if self.pressed {
-                                    self.cancel();
+                                    self.pressed = false;
                                     return true;
                                 }
                             }
@@ -169,27 +106,21 @@ impl EventHandler for ButtonState {
                     _ => {}
                 },
             },
-            Event::Mouse(mouse_event) => match mouse_event.kind {
-                MouseEventKind::Down(button) => {
-                    let hit = self.is_hit(mouse_event.column, mouse_event.row);
-                    self.focus(hit);
-                    if let MouseButton::Left = button
-                        && hit
-                    {
-                        self.press(true);
+            Event::Mouse(mouse_event) => {
+                let hit = self.is_hit(mouse_event.column, mouse_event.row);
+                self.hovered = hit;
+
+                if hit {
+                    match mouse_event.kind {
+                        MouseEventKind::Down(MouseButton::Left) => self.press(true),
+                        MouseEventKind::Up(MouseButton::Left) => self.press(false),
+                        _ => {}
                     }
                 }
-                MouseEventKind::Up(MouseButton::Left) => {
-                    if self.is_hit(mouse_event.column, mouse_event.row) {
-                        self.press(false);
-                    }
-                }
-                _ => {}
-            },
+            }
+            Event::Resize(_, _) => self.hovered = false,
             _ => {}
         };
-
-        self.handle_focus(event);
 
         false
     }

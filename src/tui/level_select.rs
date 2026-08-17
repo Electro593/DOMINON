@@ -1,7 +1,7 @@
 use std::fs::read_dir;
 
 use color_eyre::eyre::Result;
-use crossterm::event::Event;
+use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::{Rect, Size},
@@ -111,9 +111,32 @@ impl ScreenWidget for &mut LevelSelectScreen {
     }
 
     fn handle_screen_event(self, event: &Event, enhanced_keyboard: bool) -> Result<Option<Screen>> {
-        for option in self.levels.iter_mut().flatten() {
-            option.state.handle_event(event, enhanced_keyboard);
+        for (i, option) in self.levels.iter_mut().flatten().enumerate() {
+            let focused = self.selected == Some(i);
+            let consume = option.state.handle_event(event, focused, enhanced_keyboard);
+            if option.state.pressed {
+                self.selected = Some(i);
+            }
+            if consume {
+                break;
+            }
         }
+
+        if self.selected.is_some() {
+            match event {
+                Event::Key(key_event) => match key_event.code {
+                    KeyCode::Esc => match key_event.kind {
+                        KeyEventKind::Press | KeyEventKind::Repeat => {
+                            self.selected = None;
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                },
+                _ => {}
+            };
+        }
+
         Ok(None)
     }
 }
