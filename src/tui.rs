@@ -14,6 +14,7 @@ use ratatui::{DefaultTerminal, Frame};
 use crate::{
     board::Board,
     tui::{
+        level_select::LevelSelectScreen,
         main_menu::MainMenuScreen,
         screen::{ScreenWidget, ScreenWrapper},
     },
@@ -24,11 +25,11 @@ mod main_menu;
 mod screen;
 mod widget;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 enum Screen {
     None,
     MainMenu(MainMenuScreen),
-    LevelSelect,
+    LevelSelect(LevelSelectScreen),
     Level(Board),
 }
 
@@ -56,7 +57,8 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         match &mut self.screen {
-            Screen::MainMenu(menu) => frame.render_widget(ScreenWrapper(menu), frame.area()),
+            Screen::MainMenu(screen) => frame.render_widget(ScreenWrapper(screen), frame.area()),
+            Screen::LevelSelect(screen) => frame.render_widget(ScreenWrapper(screen), frame.area()),
             _ => {}
         }
     }
@@ -78,11 +80,15 @@ impl App {
                 Screen::MainMenu(screen) => {
                     screen.handle_screen_event(&event, self.enhanced_keyboard)
                 }
+                Screen::LevelSelect(screen) => {
+                    screen.handle_screen_event(&event, self.enhanced_keyboard)
+                }
                 _ => Ok(None),
             }?;
 
             if let Some(screen) = new_screen {
                 self.screen = screen;
+                return Ok(());
             }
         }
         Ok(())

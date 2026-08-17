@@ -11,11 +11,12 @@ use tui_big_text::{BigText, PixelSize};
 
 use crate::tui::{
     Screen,
+    level_select::LevelSelectScreen,
     screen::{ScreenWidget, screen_style},
     widget::{Button, ButtonState, EventHandler, Focusable},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct MainMenuScreen {
     focus: bool,
     selected: Option<usize>,
@@ -140,6 +141,9 @@ impl ScreenWidget for &mut MainMenuScreen {
             let line = Line::from(spans).style(screen_style());
 
             let mut block = Block::bordered();
+            if state.hovered {
+                block = block.border_style(Style::new().green());
+            }
             if state.focused {
                 block = block.border_type(BorderType::Double);
             }
@@ -165,7 +169,7 @@ impl ScreenWidget for &mut MainMenuScreen {
 
         if self.button_state[0].clicked {
             self.selected = Some(0);
-            return Ok(Some(Screen::LevelSelect));
+            return Ok(Some(Screen::LevelSelect(LevelSelectScreen::new())));
         }
 
         if self.button_state[1].clicked {

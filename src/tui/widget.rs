@@ -194,31 +194,3 @@ impl EventHandler for ButtonState {
         false
     }
 }
-
-#[derive(Clone, Debug)]
-pub struct GridState<T> {
-    area: Rect,
-    children: T,
-    width: usize,
-    focused: bool,
-}
-
-impl<T> EventHandler for GridState<T> {
-    fn handle_event(&mut self, event: &Event, enhanced_keyboard: bool) -> bool {
-        match event {
-            Event::Key(key_event) => match key_event.kind {
-                KeyEventKind::Press | KeyEventKind::Repeat => match key_event.code {
-                    KeyCode::Up => {}
-                    KeyCode::Down => {}
-                    KeyCode::Left => {}
-                    KeyCode::Right => {}
-                    KeyCode::Tab => {}
-                    _ => {}
-                },
-                _ => {}
-            },
-            _ => {}
-        };
-        false
-    }
-}

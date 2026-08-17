@@ -16,11 +16,11 @@ pub trait ScreenWidget: Sized {
     fn try_render(self, area: Rect, buf: &mut Buffer) -> Result<(), Size>;
 }
 
-pub struct ScreenWrapper<T>(pub T);
-
 pub fn screen_style() -> Style {
     Style::new().fg(Color::Indexed(222)).bg(Color::Indexed(17))
 }
+
+pub struct ScreenWrapper<T>(pub T);
 
 impl<T> Widget for ScreenWrapper<T>
 where
