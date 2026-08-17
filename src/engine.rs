@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, ptr};
 
-use crate::{level::Level, ringbuffer::RingBuffer};
+use crate::{level::Level, util::ringbuffer::RingBuffer};
 
 #[derive(Debug)]
 pub enum EngineError {

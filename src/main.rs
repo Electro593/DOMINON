@@ -1,8 +1,8 @@
 mod board;
 mod engine;
 mod level;
-mod ringbuffer;
 mod tui;
+mod util;
 
 use std::{fmt, io, iter, mem::discriminant};
 
