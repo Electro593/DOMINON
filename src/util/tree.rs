@@ -44,41 +44,82 @@ pub struct Tree<T> {
     free: usize,
 }
 
+#[derive(Debug)]
 pub struct TreeNode<'a, T> {
     tree: &'a Tree<T>,
-    index: usize,
+    pub index: usize,
     pub len: usize,
     pub value: &'a T,
 }
 
+#[derive(Debug)]
 pub struct TreeNodeMut<'a, T> {
     index: usize,
     pub value: &'a mut T,
 }
 
+pub struct PostOrderTreeIter<'a, T> {
+    stack: Vec<(TreeNode<'a, T>, bool)>,
+}
+
 impl<'a, T> TreeNode<'a, T> {
     #[must_use]
-    fn new(tree: &'a Tree<T>, index: usize) -> Self {
-        let node = &tree[index];
-        Self {
+    fn try_from(tree: &'a Tree<T>, index: usize) -> Option<Self> {
+        tree.get(index).map(|node| Self {
             tree,
             index,
             len: node.len,
             value: &node.value,
-        }
+        })
     }
 
     #[must_use]
-    pub fn get(&self, index: usize) -> Option<Self> {
-        let child_index = self.tree.get_child(self.index, index).unwrap();
-        self.tree.get(child_index).map(|child| Self {
-            tree: self.tree,
-            index: child_index,
-            len: child.len,
-            value: &child.value,
-        })
+    pub fn parent(&self) -> Option<Self> {
+        Self::try_from(self.tree, self.tree[self.index].parent)
+    }
+
+    #[must_use]
+    pub fn prev(&self) -> Option<Self> {
+        Self::try_from(self.tree, self.tree[self.index].prev)
+    }
+
+    #[must_use]
+    pub fn next(&self) -> Option<Self> {
+        Self::try_from(self.tree, self.tree[self.index].next)
+    }
+
+    #[must_use]
+    pub fn child(&self, index: usize) -> Option<Self> {
+        self.tree
+            .get_child(self.index, index)
+            .and_then(|child| Self::try_from(self.tree, child))
+    }
+
+    #[must_use]
+    pub fn into_mut(self, tree: &'a mut Tree<T>) -> TreeNodeMut<'a, T> {
+        TreeNodeMut::try_from(tree, self.index).unwrap()
+    }
+
+    #[must_use]
+    pub fn iter_post_order(&self) -> PostOrderTreeIter<'a, T> {
+        PostOrderTreeIter {
+            stack: vec![(*self, false)],
+        }
     }
 }
+
+impl<'a, T> Clone for TreeNode<'a, T> {
+    fn clone(&self) -> Self {
+        Self {
+            tree: self.tree,
+            index: self.index,
+            len: self.len,
+            value: self.value,
+        }
+    }
+}
+
+impl<'a, T> Copy for TreeNode<'a, T> {}
 
 impl<'a, T> Index<usize> for TreeNode<'a, T> {
     type Output = T;
@@ -90,32 +131,64 @@ impl<'a, T> Index<usize> for TreeNode<'a, T> {
 
 impl<'a, T> TreeNodeMut<'a, T> {
     #[must_use]
-    fn new(tree: &'a mut Tree<T>, index: usize) -> Self {
-        Self {
+    fn try_from(tree: &'a mut Tree<T>, index: usize) -> Option<Self> {
+        tree.get_mut(index).map(|node| Self {
             index,
-            value: &mut tree[index].value,
-        }
-    }
-
-    #[must_use]
-    pub fn get(&self, tree: &'a mut Tree<T>, index: usize) -> Option<Self> {
-        let child_index = tree.get_child(self.index, index).unwrap();
-        tree.get_mut(child_index).map(|child| Self {
-            index: child_index,
-            value: &mut child.value,
+            value: &mut node.value,
         })
     }
 
-    pub fn insert(&self, tree: &'a mut Tree<T>, index: usize, value: T) -> Self {
-        let new_index = tree.insert(self.index, index, value).unwrap();
-        Self {
-            index: new_index,
-            value: &mut tree[new_index].value,
-        }
+    #[must_use]
+    pub fn parent(&self, tree: &'a mut Tree<T>) -> Option<Self> {
+        Self::try_from(tree, tree[self.index].parent)
+    }
+
+    #[must_use]
+    pub fn prev(&self, tree: &'a mut Tree<T>) -> Option<Self> {
+        Self::try_from(tree, tree[self.index].prev)
+    }
+
+    #[must_use]
+    pub fn next(&self, tree: &'a mut Tree<T>) -> Option<Self> {
+        Self::try_from(tree, tree[self.index].next)
+    }
+
+    #[must_use]
+    pub fn child(&self, tree: &'a mut Tree<T>, index: usize) -> Option<Self> {
+        tree.get_child(self.index, index)
+            .and_then(|child| Self::try_from(tree, child))
+    }
+
+    #[must_use]
+    pub fn into_immut(self, tree: &'a Tree<T>) -> TreeNode<'a, T> {
+        TreeNode::try_from(tree, self.index).unwrap()
+    }
+
+    pub fn insert(&self, tree: &'a mut Tree<T>, index: usize, value: T) -> Option<Self> {
+        tree.insert(self.index, index, value)
+            .and_then(|new_index| Self::try_from(tree, new_index))
     }
 
     pub fn remove(&self, tree: &'a mut Tree<T>, index: usize) -> Option<T> {
-        tree.remove(tree.get_child(self.index, index).unwrap())
+        tree.get_child(self.index, index)
+            .and_then(|child| tree.remove(child))
+    }
+}
+
+impl<'a, T> Iterator for PostOrderTreeIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((node, visited)) = self.stack.pop() {
+            if visited {
+                return Some(node.value);
+            }
+
+            self.stack.push((node, true));
+            node.next().map(|n| self.stack.push((n, false)));
+            node.child(0).map(|n| self.stack.push((n, false)));
+        }
+        None
     }
 }
 
@@ -130,12 +203,12 @@ impl<T> Tree<T> {
 
     #[must_use]
     pub fn root(&self) -> TreeNode<'_, T> {
-        TreeNode::new(self, 1)
+        TreeNode::try_from(self, 1).unwrap()
     }
 
     #[must_use]
     pub fn root_mut(&mut self) -> TreeNodeMut<'_, T> {
-        TreeNodeMut::new(self, 1)
+        TreeNodeMut::try_from(self, 1).unwrap()
     }
 
     #[must_use]
@@ -177,37 +250,37 @@ impl<T> Tree<T> {
     fn get_child(&self, parent_index: usize, index: usize) -> Option<usize> {
         let mut child_index = self.get(parent_index)?.child;
         for _ in 0..index {
-            if let Some(child) = self.get(child_index) {
-                child_index = child.next;
-            }
+            child_index = self.get(child_index)?.next;
         }
-        Some(child_index)
+        self.get(child_index).map(|_| child_index)
     }
 
     fn insert(&mut self, parent_index: usize, index: usize, value: T) -> Option<usize> {
+        let child_index = self.get(parent_index)?.child;
+
+        let (prev_index, next_index) = if index == 0 {
+            (0, child_index)
+        } else {
+            let mut prev_index = child_index;
+            for _ in 1..index {
+                prev_index = self.get(prev_index)?.next;
+            }
+            (prev_index, self.get(prev_index)?.next)
+        };
+
         let new_index = self.alloc(value);
         self[new_index].parent = parent_index;
-
-        let child_index = self.get(parent_index)?.child;
-        match self.get(child_index) {
-            Some(child) => {
-                let mut last_index = child_index;
-                let mut next_index = child.next;
-                for _ in 0..index {
-                    if let Some(child) = self.get(next_index) {
-                        last_index = next_index;
-                        next_index = child.next;
-                    }
-                }
-                self[last_index].next = new_index;
-                self[new_index].prev = last_index;
-            }
-            None => {
-                self[parent_index].child = new_index;
-            }
+        self[parent_index].len += 1;
+        if index == 0 {
+            self[parent_index].child = new_index;
         }
 
-        self[parent_index].len += 1;
+        self[new_index].prev = prev_index;
+        self.get_mut(prev_index).map(|prev| prev.next = new_index);
+
+        self[new_index].next = next_index;
+        self.get_mut(next_index).map(|next| next.prev = new_index);
+
         Some(new_index)
     }
 

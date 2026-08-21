@@ -1,6 +1,8 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
+use crate::util::tree::{Tree};
+
 pub trait EventHandler {
     fn handle_event(&mut self, event: &Event, focused: bool, enhanced_keyboard: bool) -> bool;
 }
@@ -123,5 +125,16 @@ impl EventHandler for ButtonState {
         };
 
         false
+    }
+}
+
+struct WidgetTree {
+    tree: Tree<Box<dyn Widget>>,
+    focus_index: Option<usize>
+}
+
+impl WidgetTree {
+    fn focus(&mut self, focus: Option<usize>) {
+        self.focus_index = focus;
     }
 }
