@@ -1,18 +1,17 @@
 use std::fs::read_dir;
 
 use color_eyre::eyre::Result;
-use crossterm::event::{Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::{Rect, Size},
-    style::{Style, Styled},
-    widgets::{Block, BorderType, Paragraph, Shadow, Widget},
+    widgets::Widget,
 };
 
 use crate::tui::{
     Screen,
-    screen::{ScreenWidget, screen_style},
-    widget::{Button, ButtonState, EventHandler},
+    screen::ScreenWidget,
+    widget::{ButtonState, EventHandler, make_button},
 };
 
 #[derive(Debug)]
@@ -25,6 +24,7 @@ struct LevelOption {
 pub struct LevelSelectScreen {
     levels: Result<Vec<LevelOption>>,
     selected: Option<usize>,
+    focus: bool,
 }
 
 impl LevelSelectScreen {
@@ -50,7 +50,30 @@ impl LevelSelectScreen {
         LevelSelectScreen {
             levels,
             selected: Some(0),
+            focus: true,
         }
+    }
+
+    fn select_prev(&mut self) {
+        self.selected = self.selected.map_or_else(
+            || Some(1),
+            |i| {
+                let next = (i + (2 - 1)) % 2;
+                self.selected = Some(next);
+                Some(next)
+            },
+        );
+    }
+
+    fn select_next(&mut self) {
+        self.selected = self.selected.map_or_else(
+            || Some(0),
+            |i| {
+                let next = (i + 1) % 2;
+                self.selected = Some(next);
+                Some(next)
+            },
+        );
     }
 }
 
@@ -67,37 +90,23 @@ impl ScreenWidget for &mut LevelSelectScreen {
         let mut down = 0;
 
         for (i, option) in self.levels.iter_mut().flatten().enumerate() {
-            let mut name = option.name.clone();
-            if name.len() > 20 {
-                name = format!("{}...", name[0..17].to_string());
+            let mut text = option.name.clone();
+            if text.len() > 20 {
+                text = format!("{}...", text[0..17].to_string());
             }
 
-            let mut block = Block::bordered();
-
-            if option.state.hovered {
-                block = block.border_style(Style::new().green());
-            }
-
-            if let Some(selected) = self.selected
-                && selected == i
-            {
-                name = format!("> {name}");
-                block = block.border_type(BorderType::Double);
-            }
-
-            let button_width = name.len() as u16 + 4;
+            let button_width = text.len() as u16 + 4;
             let button_height = 3;
             if across + button_width >= width {
                 across = 0;
                 down += button_height;
             }
 
-            Button::new(
-                Paragraph::new(name)
-                    .centered()
-                    .block(block)
-                    .style(screen_style()),
+            make_button(
                 &mut option.state,
+                self.focus && self.selected == Some(i),
+                text,
+                None,
             )
             .render(
                 Rect::new(area.x + across, area.y + down, button_width, button_height),
@@ -114,29 +123,44 @@ impl ScreenWidget for &mut LevelSelectScreen {
         for (i, option) in self.levels.iter_mut().flatten().enumerate() {
             let focused = self.selected == Some(i);
             let consume = option.state.handle_event(event, focused, enhanced_keyboard);
-            if option.state.pressed {
-                self.selected = Some(i);
-            }
             if consume {
-                break;
+                self.selected = Some(i);
+                return Ok(None);
             }
         }
 
-        if self.selected.is_some() {
-            match event {
-                Event::Key(key_event) => match key_event.code {
-                    KeyCode::Esc => match key_event.kind {
-                        KeyEventKind::Press | KeyEventKind::Repeat => {
+        self.handle_event(event, self.focus, enhanced_keyboard);
+        Ok(None)
+    }
+}
+
+impl EventHandler for LevelSelectScreen {
+    fn handle_event(&mut self, event: &Event, focused: bool, _: bool) -> bool {
+        match event {
+            Event::Key(key_event) if focused => match key_event.kind {
+                KeyEventKind::Press | KeyEventKind::Repeat => match key_event.code {
+                    KeyCode::Up => self.select_prev(),
+                    KeyCode::Down => self.select_next(),
+                    KeyCode::Esc => {
+                        if self.selected.is_some() {
                             self.selected = None;
+                        } else {
+                            self.focus = false;
                         }
-                        _ => {}
-                    },
+                    }
                     _ => {}
                 },
                 _ => {}
-            };
-        }
-
-        Ok(None)
+            },
+            Event::Mouse(mouse_event) if focused => match mouse_event.kind {
+                MouseEventKind::ScrollDown => self.select_next(),
+                MouseEventKind::ScrollUp => self.select_prev(),
+                _ => {}
+            },
+            Event::FocusLost => self.focus = false,
+            Event::FocusGained => self.focus = true,
+            _ => {}
+        };
+        false
     }
 }

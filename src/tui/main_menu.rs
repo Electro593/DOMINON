@@ -3,17 +3,16 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Flex, Layout, Rect, Size},
-    style::{Style, Stylize},
-    text::{Line, Span},
-    widgets::{Block, BorderType, Paragraph, Widget},
+    style::Style,
+    widgets::Widget,
 };
 use tui_big_text::{BigText, PixelSize};
 
 use crate::tui::{
     Screen,
     level_select::LevelSelectScreen,
-    screen::{ScreenWidget, screen_style},
-    widget::{Button, ButtonState, EventHandler},
+    screen::ScreenWidget,
+    widget::{ButtonState, EventHandler, make_button},
 };
 
 #[derive(Debug)]
@@ -62,7 +61,13 @@ impl EventHandler for MainMenuScreen {
                 KeyEventKind::Press | KeyEventKind::Repeat => match key_event.code {
                     KeyCode::Up => self.select_prev(),
                     KeyCode::Down => self.select_next(),
-                    KeyCode::Esc => self.focus = false,
+                    KeyCode::Esc => {
+                        if self.selected.is_some() {
+                            self.selected = None;
+                        } else {
+                            self.focus = false;
+                        }
+                    }
                     _ => {}
                 },
                 _ => {}
@@ -123,52 +128,18 @@ impl ScreenWidget for &mut MainMenuScreen {
             .build()
             .render(center_layout[1], buf);
 
-        fn make_button<'a>(
-            state: &'a mut ButtonState,
-            focused: bool,
-            text: String,
-        ) -> Button<'a, Paragraph<'a>> {
-            let mut chars = text.chars();
-            let first = chars.next();
-            let rest = chars.collect::<String>();
-
-            let spans = vec![
-                focused.then(|| Span::raw("> ")),
-                first.map(|c| Span::raw(c.to_string()).magenta()),
-                Some(Span::raw(rest)),
-            ]
-            .into_iter()
-            .filter_map(|s| s)
-            .collect::<Vec<Span>>();
-
-            let line = Line::from(spans).style(screen_style());
-
-            let mut block = Block::bordered();
-            if state.hovered {
-                block = block.border_style(Style::new().green());
-            }
-            if focused {
-                block = block.border_type(BorderType::Double);
-            }
-
-            let mut button = Button::new(Paragraph::new(line).centered().block(block), state);
-            if let Some(key) = first {
-                button = button.key(KeyCode::Char(key.to_ascii_lowercase()));
-            }
-
-            button
-        }
-
         make_button(
             &mut self.button_state[0],
-            self.selected == Some(0),
+            self.focus && self.selected == Some(0),
             "Level Select".into(),
+            Some(0),
         )
         .render(center_layout[2], buf);
         make_button(
             &mut self.button_state[1],
-            self.selected == Some(1),
+            self.focus && self.selected == Some(1),
             "Quit".into(),
+            Some(0),
         )
         .render(center_layout[3], buf);
 
@@ -176,23 +147,25 @@ impl ScreenWidget for &mut MainMenuScreen {
     }
 
     fn handle_screen_event(self, event: &Event, enhanced_keyboard: bool) -> Result<Option<Screen>> {
-        let _ = (&mut self.button_state[0]).handle_event(
-            event,
-            self.selected == Some(0),
-            enhanced_keyboard,
-        ) || (&mut self.button_state[1]).handle_event(
-            event,
-            self.selected == Some(1),
-            enhanced_keyboard,
-        ) || self.handle_event(event, self.focus, enhanced_keyboard);
+        let mut press_button = |i| {
+            let focused = self.focus && self.selected == Some(i);
+            if self.button_state[i].handle_event(event, focused, enhanced_keyboard) {
+                self.selected = Some(i);
+                true
+            } else {
+                false
+            }
+        };
+
+        let _ = press_button(0)
+            || press_button(1)
+            || self.handle_event(event, self.focus, enhanced_keyboard);
 
         if self.button_state[0].clicked {
-            self.selected = Some(0);
             return Ok(Some(Screen::LevelSelect(LevelSelectScreen::new())));
         }
 
         if self.button_state[1].clicked {
-            self.selected = Some(1);
             return Ok(Some(Screen::None));
         }
 
