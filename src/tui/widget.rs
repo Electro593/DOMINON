@@ -37,7 +37,7 @@ impl ButtonState {
         }
     }
 
-    fn is_hit(&self, column: u16, row: u16) -> bool {
+    pub fn is_hit(&self, column: u16, row: u16) -> bool {
         self.area.left() <= column
             && column < self.area.right()
             && row >= self.area.top()
@@ -86,36 +86,39 @@ impl<T: Widget> Widget for Button<'_, T> {
 impl EventHandler for ButtonState {
     fn handle_event(&mut self, event: &Event, focused: bool, enhanced_keyboard: bool) -> bool {
         match event {
-            Event::Key(key_event) if focused => match key_event.kind {
+            Event::Key(key_event) => match key_event.kind {
                 KeyEventKind::Press | KeyEventKind::Repeat => {
-                    if self.key == Some(key_event.code) {
-                        self.click();
-                        return true;
-                    }
-
-                    match key_event.code {
-                        KeyCode::Esc => {
-                            if self.pressed {
-                                self.pressed = false;
-                                return true;
-                            }
-                        }
-                        KeyCode::Enter | KeyCode::Char(' ') => {
-                            if enhanced_keyboard {
-                                self.press();
-                            } else {
-                                self.click();
-                            }
+                    if focused {
+                        if self.key == Some(key_event.code) {
+                            self.click();
                             return true;
                         }
-                        _ => {}
+
+                        match key_event.code {
+                            KeyCode::Esc => {
+                                if self.pressed {
+                                    self.pressed = false;
+                                    return true;
+                                }
+                            }
+                            KeyCode::Enter | KeyCode::Char(' ') => {
+                                if enhanced_keyboard {
+                                    self.press();
+                                } else {
+                                    self.click();
+                                }
+                                return true;
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 KeyEventKind::Release => match key_event.code {
                     KeyCode::Enter | KeyCode::Char(' ') => {
-                        if self.pressed {
+                        if focused && self.pressed {
                             self.click();
-                            return true;
+                        } else {
+                            self.cancel();
                         }
                     }
                     _ => {}
@@ -133,10 +136,10 @@ impl EventHandler for ButtonState {
                         }
                     }
                     MouseEventKind::Up(MouseButton::Left) => {
-                        self.cancel();
-                        if focused && hit {
+                        if focused && self.pressed && hit {
                             self.click();
-                            return true;
+                        } else {
+                            self.cancel();
                         }
                     }
                     _ => {}

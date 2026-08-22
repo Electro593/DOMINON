@@ -1,7 +1,7 @@
 use std::fs::read_dir;
 
 use color_eyre::eyre::Result;
-use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::{Rect, Size},
@@ -14,7 +14,7 @@ use crate::tui::{
     widget::{ButtonState, EventHandler, make_button},
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct LevelOption {
     name: String,
     state: ButtonState,
@@ -43,6 +43,10 @@ impl LevelSelectScreen {
                                 state: ButtonState::new(),
                             })
                     })
+                    .chain((0..100).map(|i| LevelOption {
+                        name: format!("Duplicant {i}"),
+                        state: ButtonState::new(),
+                    }))
                     .collect::<Vec<LevelOption>>()
             })
             .map_err(|e| e.into());
@@ -54,26 +58,120 @@ impl LevelSelectScreen {
         }
     }
 
-    fn select_prev(&mut self) {
-        self.selected = self.selected.map_or_else(
-            || Some(1),
-            |i| {
-                let next = (i + (2 - 1)) % 2;
-                self.selected = Some(next);
-                Some(next)
-            },
-        );
+    fn selection_bounds(&self) -> Option<Rect> {
+        self.levels
+            .iter()
+            .flatten()
+            .map(|level| level.state.area)
+            .reduce(|a, b| a.union(b))
     }
 
-    fn select_next(&mut self) {
-        self.selected = self.selected.map_or_else(
-            || Some(0),
-            |i| {
-                let next = (i + 1) % 2;
-                self.selected = Some(next);
-                Some(next)
-            },
-        );
+    fn select_hit(&mut self, x: u16, y: u16) -> bool {
+        for (i, level) in self.levels.iter_mut().flatten().enumerate() {
+            if level.state.is_hit(x, y) {
+                self.selected = Some(i);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn select_hit_walk(&mut self, min_x: u16, mut x: u16, y: u16) -> bool {
+        while x >= min_x {
+            if self.select_hit(x, y) {
+                return true;
+            }
+
+            if x < 5 {
+                break;
+            }
+
+            x -= 5;
+        }
+        false
+    }
+
+    fn select_up(&mut self) {
+        if let Ok(levels) = &self.levels {
+            if let Some(bounds) = self.selection_bounds() {
+                let max_y = bounds.bottom() - 1;
+                match self.selected {
+                    None => {
+                        self.select_hit(bounds.x, max_y);
+                    }
+                    Some(i) => {
+                        let area = levels[i].state.area;
+                        let y = if area.y == bounds.y {
+                            max_y
+                        } else {
+                            area.y - 1
+                        };
+                        self.select_hit_walk(bounds.x, area.x + area.width / 2, y);
+                    }
+                };
+            }
+        }
+    }
+
+    fn select_down(&mut self) {
+        if let Ok(levels) = &self.levels {
+            if let Some(bounds) = self.selection_bounds() {
+                match self.selected {
+                    None => {
+                        self.select_hit(bounds.x, bounds.y);
+                    }
+                    Some(i) => {
+                        let area = levels[i].state.area;
+                        let x = area.x + area.width / 2;
+                        let mut y = area.bottom();
+                        if y >= bounds.bottom() {
+                            y = bounds.top();
+                        }
+                        self.select_hit_walk(bounds.x, x, y);
+                    }
+                };
+            }
+        }
+    }
+
+    fn select_left(&mut self) {
+        if let Ok(levels) = &self.levels {
+            if let Some(bounds) = self.selection_bounds() {
+                let max_x = bounds.right() - 5;
+                match self.selected {
+                    None => {
+                        self.select_hit_walk(bounds.x, max_x, bounds.y);
+                    }
+                    Some(i) => {
+                        let area = levels[i].state.area;
+                        let x = if area.x == bounds.x {
+                            max_x
+                        } else {
+                            area.x - 1
+                        };
+                        self.select_hit_walk(bounds.x, x, area.y);
+                    }
+                };
+            }
+        }
+    }
+
+    fn select_right(&mut self) {
+        if let Ok(levels) = &self.levels {
+            if let Some(bounds) = self.selection_bounds() {
+                match self.selected {
+                    None => {
+                        self.select_hit(bounds.x, bounds.y);
+                    }
+                    Some(i) => {
+                        let area = levels[i].state.area;
+                        if !self.select_hit(area.x + area.width, area.y) {
+                            self.select_hit(bounds.x, area.y);
+                        }
+                    }
+                };
+            }
+        }
     }
 }
 
@@ -89,26 +187,27 @@ impl ScreenWidget for &mut LevelSelectScreen {
         let mut across = 0;
         let mut down = 0;
 
+        // TODO: Error message
+        // TODO: Back button
+        // TODO: Scroll the list properly
+        // TODO: Input name directly
+
         for (i, option) in self.levels.iter_mut().flatten().enumerate() {
+            let is_selected = self.focus && self.selected == Some(i);
+
             let mut text = option.name.clone();
             if text.len() > 20 {
                 text = format!("{}...", text[0..17].to_string());
             }
 
-            let button_width = text.len() as u16 + 4;
+            let button_width = text.len() as u16 + 6;
             let button_height = 3;
-            if across + button_width >= width {
+            if across + button_width >= area.width {
                 across = 0;
                 down += button_height;
             }
 
-            make_button(
-                &mut option.state,
-                self.focus && self.selected == Some(i),
-                text,
-                None,
-            )
-            .render(
+            make_button(&mut option.state, is_selected, text, None).render(
                 Rect::new(area.x + across, area.y + down, button_width, button_height),
                 buf,
             );
@@ -139,8 +238,10 @@ impl EventHandler for LevelSelectScreen {
         match event {
             Event::Key(key_event) if focused => match key_event.kind {
                 KeyEventKind::Press | KeyEventKind::Repeat => match key_event.code {
-                    KeyCode::Up => self.select_prev(),
-                    KeyCode::Down => self.select_next(),
+                    KeyCode::Up => self.select_up(),
+                    KeyCode::Down => self.select_down(),
+                    KeyCode::Left => self.select_left(),
+                    KeyCode::Right => self.select_right(),
                     KeyCode::Esc => {
                         if self.selected.is_some() {
                             self.selected = None;
@@ -153,8 +254,22 @@ impl EventHandler for LevelSelectScreen {
                 _ => {}
             },
             Event::Mouse(mouse_event) if focused => match mouse_event.kind {
-                MouseEventKind::ScrollDown => self.select_next(),
-                MouseEventKind::ScrollUp => self.select_prev(),
+                MouseEventKind::ScrollUp => {
+                    if mouse_event.modifiers.contains(KeyModifiers::SHIFT) {
+                        self.select_left();
+                    } else {
+                        self.select_up();
+                    }
+                }
+                MouseEventKind::ScrollDown => {
+                    if mouse_event.modifiers.contains(KeyModifiers::SHIFT) {
+                        self.select_right();
+                    } else {
+                        self.select_down();
+                    }
+                }
+                MouseEventKind::ScrollLeft => self.select_left(),
+                MouseEventKind::ScrollRight => self.select_right(),
                 _ => {}
             },
             Event::FocusLost => self.focus = false,
