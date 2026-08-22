@@ -4,7 +4,7 @@ use color_eyre::eyre::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
-    layout::{Rect, Size},
+    layout::{Position, Rect, Size},
     widgets::Widget,
 };
 
@@ -43,7 +43,7 @@ impl LevelSelectScreen {
                                 state: ButtonState::new(),
                             })
                     })
-                    .chain((0..100).map(|i| LevelOption {
+                    .chain((0..150).map(|i| LevelOption {
                         name: format!("Duplicant {i}"),
                         state: ButtonState::new(),
                     }))
@@ -189,30 +189,64 @@ impl ScreenWidget for &mut LevelSelectScreen {
 
         // TODO: Error message
         // TODO: Back button
-        // TODO: Scroll the list properly
         // TODO: Input name directly
 
-        for (i, option) in self.levels.iter_mut().flatten().enumerate() {
-            let is_selected = self.focus && self.selected == Some(i);
+        if let Ok(ref mut levels) = self.levels {
+            let mut max_across = 0;
+            let mut selected_y = 0;
+            let mut buttons = vec![];
 
-            let mut text = option.name.clone();
-            if text.len() > 20 {
-                text = format!("{}...", text[0..17].to_string());
+            for (i, option) in levels.iter_mut().enumerate() {
+                let is_selected = self.focus && self.selected == Some(i);
+
+                let mut text = option.name.clone();
+                if text.len() > 20 {
+                    text = format!("{}...", text[0..17].to_string());
+                }
+
+                let button_width = text.len() as u16 + 6;
+                let button_height = 3;
+                if across + button_width >= area.width {
+                    across = 0;
+                    down += button_height;
+                }
+
+                if is_selected {
+                    selected_y = down;
+                }
+
+                let button = make_button(&mut option.state, is_selected, text, None);
+                let rect = Rect::new(across, down, button_width, button_height);
+                across += button_width;
+                max_across = max_across.max(across);
+
+                buttons.push((button, rect));
             }
 
-            let button_width = text.len() as u16 + 6;
-            let button_height = 3;
-            if across + button_width >= area.width {
-                across = 0;
-                down += button_height;
+            down += 3;
+            let example = buf[area.as_position()].clone();
+            let mut canvas = Buffer::filled(Rect::new(0, 0, max_across, down), example);
+
+            for (button, rect) in buttons {
+                button.render(rect, &mut canvas);
             }
 
-            make_button(&mut option.state, is_selected, text, None).render(
-                Rect::new(area.x + across, area.y + down, button_width, button_height),
-                buf,
-            );
+            let start_y = (selected_y + 1)
+                .saturating_sub(area.height / 2)
+                .min(down.saturating_sub(area.height));
+            let view = Rect::new(0, start_y, area.width, area.height).intersection(canvas.area);
 
-            across += button_width;
+            for y in 0..view.height {
+                for x in 0..view.width {
+                    let fpos = Position::new(view.x + x, view.y + y);
+                    let tpos = Position::new(area.x + x, area.y + y);
+                    if let Some(from) = canvas.cell(fpos) {
+                        if let Some(to) = buf.cell_mut(tpos) {
+                            *to = from.clone();
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
